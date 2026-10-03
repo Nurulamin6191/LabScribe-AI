@@ -58,13 +58,29 @@ echo " 3) [COMPACT]     Qwen 2.5 1.5B     (~1.1 GB VRAM, ultra-low memory guard)
 echo " 4) [SPECIALIZED] BioMistral 7B     (~4.7 GB VRAM, PubMed Central pretrained)"
 echo "=========================================================="
 
-read -p "Enter choice [1-4] (default: $DEFAULT_CHOICE): " CHOICE
-CHOICE=${CHOICE:-$DEFAULT_CHOICE}
+if [ -n "$1" ]; then
+    CHOICE="$1"
+elif [ -t 0 ]; then
+    read -p "Enter choice [1-4] (default: $DEFAULT_CHOICE): " CHOICE
+    CHOICE=${CHOICE:-$DEFAULT_CHOICE}
+else
+    CHOICE=$DEFAULT_CHOICE
+fi
 
 # 2. Install or verify Ollama runtime
+export PATH="$HOME/.local/bin:$PATH"
 if ! command -v ollama &> /dev/null; then
     echo "[!] Ollama not found. Installing Ollama runtime..."
-    curl -fsSL https://ollama.com/install.sh | sh
+    if sudo -n true 2>/dev/null; then
+        curl -fsSL https://ollama.com/install.sh | sh
+    else
+        echo "[*] Installing Ollama standalone binary into ~/.local/ (no sudo required)..."
+        mkdir -p "$HOME/.local/bin" "$HOME/.local/lib"
+        curl -fsSL https://github.com/ollama/ollama/releases/latest/download/ollama-linux-amd64.tgz -o /tmp/ollama-linux-amd64.tgz
+        tar -xzf /tmp/ollama-linux-amd64.tgz -C "$HOME/.local/"
+        rm -f /tmp/ollama-linux-amd64.tgz
+    fi
+    echo "[✓] Ollama runtime installed."
 else
     echo "[✓] Ollama runtime detected."
 fi
@@ -74,7 +90,7 @@ export OLLAMA_HOST="0.0.0.0:11434"
 if ! pgrep -x "ollama" > /dev/null; then
     echo "[*] Launching Ollama daemon on 0.0.0.0:11434 (accessible from PC and Android)..."
     OLLAMA_HOST="0.0.0.0:11434" nohup ollama serve > /tmp/ollama.log 2>&1 &
-    sleep 3
+    sleep 4
 else
     echo "[✓] Ollama daemon is already running."
 fi
@@ -107,7 +123,7 @@ case $CHOICE in
         ;;
 esac
 
-# 5. Local Speech-To-Text Setup (Faster-Whisper)
+# 5. Local Speech-To-Text Setup (Faster-Whisper on Port 8000)
 LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 [ -z "$LAN_IP" ] && LAN_IP="127.0.0.1"
 
@@ -115,21 +131,24 @@ echo ""
 echo "----------------------------------------------------------"
 echo " Local Speech-To-Text Setup (Faster-Whisper on Port 8000)"
 echo "----------------------------------------------------------"
-echo "To start the local Whisper server on 0.0.0.0:8000 (OpenAI-compatible):"
-echo ""
-if command -v docker &> /dev/null; then
-    echo "  [Docker (Recommended)]: Run in terminal:"
-    if [ "$VRAM_MB" -gt 0 ]; then
-        echo "    docker run -d --name labscribe-whisper --restart unless-stopped --gpus all -p 0.0.0.0:8000:8000 fedirz/faster-whisper-server:latest-cuda"
+if command -v docker &> /dev/null && docker ps &> /dev/null; then
+    if ! docker ps --format '{{.Names}}' | grep -q "^labscribe-whisper$"; then
+        echo "[*] Launching Faster-Whisper STT container via Docker on port 8000..."
+        docker rm -f labscribe-whisper 2>/dev/null || true
+        if [ "$VRAM_MB" -gt 0 ]; then
+            docker run -d --name labscribe-whisper --restart unless-stopped --gpus all -p 0.0.0.0:8000:8000 fedirz/faster-whisper-server:latest-cuda
+        else
+            docker run -d --name labscribe-whisper --restart unless-stopped -p 0.0.0.0:8000:8000 fedirz/faster-whisper-server:latest-cpu
+        fi
+        echo "[✓] Faster-Whisper container is active and listening on port 8000."
     else
-        echo "    docker run -d --name labscribe-whisper --restart unless-stopped -p 0.0.0.0:8000:8000 fedirz/faster-whisper-server:latest-cpu"
+        echo "[✓] Faster-Whisper container 'labscribe-whisper' is already active on port 8000."
     fi
-    echo ""
+else
+    echo "To start Whisper manually:"
+    echo "  pip install faster-whisper-server"
+    echo "  faster-whisper-server --host 0.0.0.0 --port 8000 --model Systran/faster-whisper-small"
 fi
-echo "  [Python Pip Alternative]:"
-echo "    pip install faster-whisper-server"
-echo "    faster-whisper-server --host 0.0.0.0 --port 8000 --model Systran/faster-whisper-small"
-echo "----------------------------------------------------------"
 echo ""
 echo "=========================================================="
 echo " [✓] Local Scientific Inference Stack Ready!"

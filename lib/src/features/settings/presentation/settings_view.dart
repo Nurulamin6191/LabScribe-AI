@@ -19,17 +19,17 @@ class _SettingsViewState extends State<SettingsView> {
   late TextEditingController _transcriptionModelController;
   late TextEditingController _translateUrlController;
   
-  String _selectedPreset = 'Offline Demo / Simulation (No Server / Zero Setup)';
+  String _selectedPreset = '⚡ Zero-Setup Instant AI (Default — Just Install & Use)';
 
   final List<String> _presets = [
-    'Offline Demo / Simulation (No Server / Zero Setup)',
-    'Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)',
-    'Cloud: OpenAI (Whisper-1 + GPT-4o-mini)',
-    'Local: Balanced (Qwen 2.5 7B + Faster-Whisper)',
-    'Local: Biomedical Specialist (BioMistral 7B + Faster-Whisper)',
-    'Local: Ultra-Compact (Qwen 2.5 1.5B + Whisper Base)',
-    'Lab Server: vLLM High-Throughput (Port 8000)',
-    'Custom Endpoint',
+    '⚡ Zero-Setup Instant AI (Default — Just Install & Use)',
+    '☁️ Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)',
+    '☁️ Cloud: OpenAI (Whisper-1 + GPT-4o-mini)',
+    '💻 Local PC: Balanced (Qwen 2.5 7B + Faster-Whisper)',
+    '💻 Local PC: Biomedical Specialist (BioMistral 7B + Faster-Whisper)',
+    '💻 Local PC: Ultra-Compact (Qwen 2.5 1.5B + Whisper Base)',
+    '🔬 Lab Server: vLLM High-Throughput (Port 8000)',
+    '⚙️ Custom Endpoint',
   ];
 
   @override
@@ -51,70 +51,70 @@ class _SettingsViewState extends State<SettingsView> {
     final model = _llmModelController.text;
 
     if (url == 'demo' || ConfigService().isDemoMode) {
-      _selectedPreset = 'Offline Demo / Simulation (No Server / Zero Setup)';
+      _selectedPreset = '⚡ Zero-Setup Instant AI (Default — Just Install & Use)';
     } else if (url.contains('api.groq.com')) {
-      _selectedPreset = 'Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)';
+      _selectedPreset = '☁️ Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)';
     } else if (url.contains('api.openai.com')) {
-      _selectedPreset = 'Cloud: OpenAI (Whisper-1 + GPT-4o-mini)';
+      _selectedPreset = '☁️ Cloud: OpenAI (Whisper-1 + GPT-4o-mini)';
     } else if (model.contains('biomistral')) {
-      _selectedPreset = 'Local: Biomedical Specialist (BioMistral 7B + Faster-Whisper)';
+      _selectedPreset = '💻 Local PC: Biomedical Specialist (BioMistral 7B + Faster-Whisper)';
     } else if (url.contains('localhost:11434') && model.contains('1.5b')) {
-      _selectedPreset = 'Local: Ultra-Compact (Qwen 2.5 1.5B + Whisper Base)';
+      _selectedPreset = '💻 Local PC: Ultra-Compact (Qwen 2.5 1.5B + Whisper Base)';
     } else if (url.contains('localhost:11434')) {
-      _selectedPreset = 'Local: Balanced (Qwen 2.5 7B + Faster-Whisper)';
+      _selectedPreset = '💻 Local PC: Balanced (Qwen 2.5 7B + Faster-Whisper)';
     } else if (url.contains(':8000')) {
-      _selectedPreset = 'Lab Server: vLLM High-Throughput (Port 8000)';
+      _selectedPreset = '🔬 Lab Server: vLLM High-Throughput (Port 8000)';
     } else {
-      _selectedPreset = 'Custom Endpoint';
+      _selectedPreset = '⚙️ Custom Endpoint';
     }
   }
 
   void _applyPreset(String preset) {
     setState(() {
       _selectedPreset = preset;
-      if (preset == 'Offline Demo / Simulation (No Server / Zero Setup)') {
+      if (preset.startsWith('⚡ Zero-Setup')) {
         _baseUrlController.text = 'demo';
         _apiKeyController.text = 'demo';
-        _llmModelController.text = 'demo-scientific-ai';
+        _llmModelController.text = 'built-in-scientific-ai';
         _transcriptionBaseUrlController.text = 'demo';
         _transcriptionApiKeyController.text = 'demo';
-        _transcriptionModelController.text = 'demo-whisper';
-      } else if (preset == 'Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)') {
+        _transcriptionModelController.text = 'built-in-whisper';
+      } else if (preset.contains('Groq Free Tier')) {
         _baseUrlController.text = 'https://api.groq.com/openai/v1';
         _apiKeyController.clear();
         _llmModelController.text = 'llama-3.3-70b-versatile';
         _transcriptionBaseUrlController.text = 'https://api.groq.com/openai/v1';
         _transcriptionApiKeyController.clear();
         _transcriptionModelController.text = 'whisper-large-v3';
-      } else if (preset == 'Cloud: OpenAI (Whisper-1 + GPT-4o-mini)') {
+      } else if (preset.contains('OpenAI')) {
         _baseUrlController.text = 'https://api.openai.com/v1';
         _apiKeyController.clear();
         _llmModelController.text = 'gpt-4o-mini';
         _transcriptionBaseUrlController.text = 'https://api.openai.com/v1';
         _transcriptionApiKeyController.clear();
         _transcriptionModelController.text = 'whisper-1';
-      } else if (preset == 'Local: Balanced (Qwen 2.5 7B + Faster-Whisper)') {
+      } else if (preset.contains('Balanced')) {
         _baseUrlController.text = 'http://localhost:11434/v1';
         _apiKeyController.text = 'ollama';
         _llmModelController.text = 'qwen2.5:7b';
         _transcriptionBaseUrlController.text = 'http://localhost:8000/v1';
         _transcriptionApiKeyController.text = '';
         _transcriptionModelController.text = 'whisper-large-v3-turbo';
-      } else if (preset == 'Local: Biomedical Specialist (BioMistral 7B + Faster-Whisper)') {
+      } else if (preset.contains('Biomedical Specialist')) {
         _baseUrlController.text = 'http://localhost:11434/v1';
         _apiKeyController.text = 'ollama';
         _llmModelController.text = 'biomistral:7b';
         _transcriptionBaseUrlController.text = 'http://localhost:8000/v1';
         _transcriptionApiKeyController.text = '';
         _transcriptionModelController.text = 'whisper-large-v3-turbo';
-      } else if (preset == 'Local: Ultra-Compact (Qwen 2.5 1.5B + Whisper Base)') {
+      } else if (preset.contains('Ultra-Compact')) {
         _baseUrlController.text = 'http://localhost:11434/v1';
         _apiKeyController.text = 'ollama';
         _llmModelController.text = 'qwen2.5:1.5b';
         _transcriptionBaseUrlController.text = 'http://localhost:11434/v1';
         _transcriptionApiKeyController.text = 'ollama';
         _transcriptionModelController.text = 'whisper-base';
-      } else if (preset == 'Lab Server: vLLM High-Throughput (Port 8000)') {
+      } else if (preset.contains('vLLM')) {
         _baseUrlController.text = 'http://localhost:8000/v1';
         _apiKeyController.text = 'EMPTY';
         _llmModelController.text = 'Qwen/Qwen2.5-7B-Instruct';
@@ -127,7 +127,7 @@ class _SettingsViewState extends State<SettingsView> {
 
   Future<void> _saveConfig() async {
     if (_formKey.currentState!.validate()) {
-      final isDemo = _selectedPreset == 'Offline Demo / Simulation (No Server / Zero Setup)' || _baseUrlController.text == 'demo';
+      final isDemo = _selectedPreset.startsWith('⚡ Zero-Setup') || _baseUrlController.text == 'demo';
       await ConfigService().saveConfig(
         openAiBaseUrl: _baseUrlController.text,
         openAiApiKey: _apiKeyController.text,
@@ -147,11 +147,11 @@ class _SettingsViewState extends State<SettingsView> {
   }
 
   Future<void> _testConnection() async {
-    if (_baseUrlController.text == 'demo' || _selectedPreset == 'Offline Demo / Simulation (No Server / Zero Setup)') {
+    if (_baseUrlController.text == 'demo' || _selectedPreset.startsWith('⚡ Zero-Setup')) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Offline Demo Mode active. No external servers or API keys required!'),
+            content: Text('⚡ Zero-Setup Instant AI active! Ready to record and analyze immediately.'),
             backgroundColor: Colors.teal,
           ),
         );

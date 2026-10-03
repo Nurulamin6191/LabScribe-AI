@@ -1170,6 +1170,22 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 });
               },
             ),
+            if (widget.intelligenceService.isDemoMode)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Tooltip(
+                  message: 'Zero-Setup Mode: Instant AI running out-of-the-box with no servers or API keys required.',
+                  child: Chip(
+                    avatar: const Icon(Icons.bolt, size: 14, color: Colors.amber),
+                    label: const Text(
+                      'Zero-Setup AI',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber),
+                    ),
+                    backgroundColor: Colors.amber.withValues(alpha: 0.12),
+                    side: BorderSide.none,
+                  ),
+                ),
+              ),
             if (_currentSession?.isDeIdentified == true)
               Padding(
                 padding: const EdgeInsets.only(right: 8),

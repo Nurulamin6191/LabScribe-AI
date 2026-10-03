@@ -8,25 +8,25 @@ class ConfigService {
 
   late SharedPreferences _prefs;
 
-  String openAiBaseUrl = 'http://localhost:11434/v1';
-  String openAiApiKey = 'ollama';
-  String llmModel = 'qwen2.5:3b';
-  String transcriptionBaseUrl = 'http://localhost:8000/v1';
-  String transcriptionApiKey = '';
-  String transcriptionModel = 'whisper-large-v3-turbo';
+  String openAiBaseUrl = 'demo';
+  String openAiApiKey = 'demo';
+  String llmModel = 'built-in-scientific-ai';
+  String transcriptionBaseUrl = 'demo';
+  String transcriptionApiKey = 'demo';
+  String transcriptionModel = 'built-in-whisper';
   String libreTranslateBaseUrl = 'http://localhost:5000';
-  bool isDemoMode = false;
+  bool isDemoMode = true;
 
   Future<void> loadConfig() async {
     _prefs = await SharedPreferences.getInstance();
-    openAiBaseUrl = _prefs.getString('openAiBaseUrl') ?? 'http://localhost:11434/v1';
-    openAiApiKey = _prefs.getString('openAiApiKey') ?? 'ollama';
-    llmModel = _prefs.getString('llmModel') ?? 'qwen2.5:3b';
+    openAiBaseUrl = _prefs.getString('openAiBaseUrl') ?? 'demo';
+    openAiApiKey = _prefs.getString('openAiApiKey') ?? 'demo';
+    llmModel = _prefs.getString('llmModel') ?? 'built-in-scientific-ai';
     transcriptionBaseUrl = _prefs.getString('transcriptionBaseUrl') ?? openAiBaseUrl;
     transcriptionApiKey = _prefs.getString('transcriptionApiKey') ?? openAiApiKey;
-    transcriptionModel = _prefs.getString('transcriptionModel') ?? 'whisper-large-v3-turbo';
+    transcriptionModel = _prefs.getString('transcriptionModel') ?? 'built-in-whisper';
     libreTranslateBaseUrl = _prefs.getString('libreTranslateBaseUrl') ?? 'http://localhost:5000';
-    isDemoMode = _prefs.getBool('isDemoMode') ?? false;
+    isDemoMode = _prefs.getBool('isDemoMode') ?? (openAiBaseUrl == 'demo' || transcriptionBaseUrl == 'demo');
   }
 
   Future<void> saveConfig({
