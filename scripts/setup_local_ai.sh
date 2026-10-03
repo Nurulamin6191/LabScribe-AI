@@ -69,11 +69,14 @@ else
     echo "[✓] Ollama runtime detected."
 fi
 
-# 3. Ensure Ollama service is active
+# 3. Ensure Ollama service is active (bind to 0.0.0.0 so Android devices on LAN can connect)
+export OLLAMA_HOST="0.0.0.0:11434"
 if ! pgrep -x "ollama" > /dev/null; then
-    echo "[*] Launching Ollama daemon in background..."
-    ollama serve > /dev/null 2>&1 &
+    echo "[*] Launching Ollama daemon on 0.0.0.0:11434 (accessible from PC and Android)..."
+    OLLAMA_HOST="0.0.0.0:11434" nohup ollama serve > /tmp/ollama.log 2>&1 &
     sleep 3
+else
+    echo "[✓] Ollama daemon is already running."
 fi
 
 # 4. Pull selected LLM model
@@ -99,29 +102,49 @@ case $CHOICE in
         ollama pull biomistral:7b
         ;;
     *)
-        MODEL_NAME="qwen2.5:7b"
-        ollama pull qwen2.5:7b
+        MODEL_NAME="qwen2.5:3b"
+        ollama pull qwen2.5:3b
         ;;
 esac
 
-# 5. Local Speech-To-Text Setup (Faster-Whisper Turbo)
+# 5. Local Speech-To-Text Setup (Faster-Whisper)
+LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+[ -z "$LAN_IP" ] && LAN_IP="127.0.0.1"
+
 echo ""
 echo "----------------------------------------------------------"
-echo " Local Speech-To-Text Setup (Faster-Whisper Large-v3-Turbo)"
+echo " Local Speech-To-Text Setup (Faster-Whisper on Port 8000)"
 echo "----------------------------------------------------------"
-echo "To run local Whisper on http://localhost:8000/v1 (OpenAI-compatible STT):"
+echo "To start the local Whisper server on 0.0.0.0:8000 (OpenAI-compatible):"
 echo ""
-echo "Option A: Python virtual environment:"
-echo "  pip install faster-whisper-server"
-echo "  faster-whisper-server --model Systran/faster-whisper-large-v3-turbo --port 8000"
-echo ""
-echo "Option B: GPU Docker container:"
-echo "  docker run -d --gpus all -p 8000:8000 fedirz/faster-whisper-server:latest-cuda"
+if command -v docker &> /dev/null; then
+    echo "  [Docker (Recommended)]: Run in terminal:"
+    if [ "$VRAM_MB" -gt 0 ]; then
+        echo "    docker run -d --name labscribe-whisper --restart unless-stopped --gpus all -p 0.0.0.0:8000:8000 fedirz/faster-whisper-server:latest-cuda"
+    else
+        echo "    docker run -d --name labscribe-whisper --restart unless-stopped -p 0.0.0.0:8000:8000 fedirz/faster-whisper-server:latest-cpu"
+    fi
+    echo ""
+fi
+echo "  [Python Pip Alternative]:"
+echo "    pip install faster-whisper-server"
+echo "    faster-whisper-server --host 0.0.0.0 --port 8000 --model Systran/faster-whisper-small"
 echo "----------------------------------------------------------"
 echo ""
 echo "=========================================================="
-echo " [✓] Local Scientific Inference Stack Configured!"
-echo " LLM Model Name : $MODEL_NAME"
-echo " LLM Endpoint   : http://localhost:11434/v1"
-echo " STT Endpoint   : http://localhost:8000/v1 (or groq/openai in settings)"
+echo " [✓] Local Scientific Inference Stack Ready!"
+echo "=========================================================="
+echo ""
+echo " A) For Desktop App (Running on this Linux/Windows PC):"
+echo "    - LLM Endpoint   : http://localhost:11434/v1"
+echo "    - LLM Model      : $MODEL_NAME"
+echo "    - STT Endpoint   : http://localhost:8000/v1"
+echo "    - STT Model      : whisper-large-v3-turbo (or small/base)"
+echo ""
+echo " B) For Android App (Running on phone connected to same Wi-Fi):"
+echo "    In Android App -> Settings (gear icon):"
+echo "    - LLM Endpoint   : http://${LAN_IP}:11434/v1"
+echo "    - LLM Model      : $MODEL_NAME"
+echo "    - STT Endpoint   : http://${LAN_IP}:8000/v1"
+echo "    - STT Model      : whisper-large-v3-turbo (or small/base)"
 echo "=========================================================="
