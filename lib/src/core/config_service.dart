@@ -9,7 +9,7 @@ class ConfigService {
   late SharedPreferences _prefs;
 
   String openAiBaseUrl = 'https://text.pollinations.ai/openai';
-  String openAiApiKey = 'zero-setup';
+  String openAiApiKey = '';
   String llmModel = 'openai-fast';
   String transcriptionBaseUrl = '';
   String transcriptionApiKey = '';
@@ -20,7 +20,7 @@ class ConfigService {
   Future<void> loadConfig() async {
     _prefs = await SharedPreferences.getInstance();
     openAiBaseUrl = _prefs.getString('openAiBaseUrl') ?? 'https://text.pollinations.ai/openai';
-    openAiApiKey = _prefs.getString('openAiApiKey') ?? 'zero-setup';
+    openAiApiKey = _prefs.getString('openAiApiKey') ?? '';
     llmModel = _prefs.getString('llmModel') ?? 'openai-fast';
     transcriptionBaseUrl = _prefs.getString('transcriptionBaseUrl') ?? '';
     transcriptionApiKey = _prefs.getString('transcriptionApiKey') ?? '';

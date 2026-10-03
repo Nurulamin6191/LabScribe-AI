@@ -1649,64 +1649,40 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       },
       child: Scaffold(
         appBar: AppBar(
+          titleSpacing: 20,
           title: Row(
             children: [
-              const Icon(Icons.biotech, color: Colors.tealAccent),
-              const SizedBox(width: 8),
-              Text(
-                _isMeetingCompactMode ? 'LabScribe Meeting Deck' : 'LabScribe AI',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4F46E5).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.graphic_eq, color: Color(0xFF4F46E5), size: 20),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'LabScribe',
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17, letterSpacing: -0.3),
+                  ),
+                  Text(
+                    _titleController.text.trim().isNotEmpty
+                        ? _titleController.text.trim()
+                        : 'Intelligent Meeting Assistant',
+                    style: TextStyle(fontSize: 11, color: theme.colorScheme.outline),
+                  ),
+                ],
               ),
             ],
           ),
           actions: [
-            // Meeting Compact Mode Toggle Button
             IconButton(
-              icon: Icon(_isMeetingCompactMode ? Icons.aspect_ratio : Icons.picture_in_picture_alt),
-              tooltip: _isMeetingCompactMode ? 'Expand to Full Dashboards' : 'Switch to Compact Meeting Mode',
-              onPressed: () {
-                setState(() {
-                  _isMeetingCompactMode = !_isMeetingCompactMode;
-                });
-              },
-            ),
-            if (widget.intelligenceService.isDemoMode)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: Tooltip(
-                  message: 'Zero-Setup Mode: Instant AI running out-of-the-box with no servers or API keys required.',
-                  child: Chip(
-                    avatar: const Icon(Icons.bolt, size: 14, color: Colors.amber),
-                    label: const Text(
-                      'Zero-Setup AI',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber),
-                    ),
-                    backgroundColor: Colors.amber.withValues(alpha: 0.12),
-                    side: BorderSide.none,
-                  ),
-                ),
-              ),
-            if (_currentSession?.isDeIdentified == true)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Chip(
-                  avatar: const Icon(Icons.shield, size: 14, color: Colors.teal),
-                  label: Text(
-                    'HIPAA (${_redactedTokensCount > 0 ? _redactedTokensCount : "Protected"})',
-                    style: const TextStyle(fontSize: 11, color: Colors.teal, fontWeight: FontWeight.bold),
-                  ),
-                  backgroundColor: Colors.teal.withOpacity(0.12),
-                ),
-              ),
-            // In-App Markdown Lab Notebook Preview
-            IconButton(
-              icon: const Icon(Icons.article),
-              tooltip: 'In-App Notebook Preview',
-              onPressed: _showMarkdownPreviewer,
-            ),
-            IconButton(
-              icon: const Icon(Icons.history),
-              tooltip: 'Session History',
+              icon: const Icon(Icons.history_rounded),
+              tooltip: 'Meeting History',
               onPressed: () async {
                 final selectedSession = await Navigator.push(
                   context,
@@ -1717,22 +1693,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 }
               },
             ),
-            IconButton(
-              icon: const Icon(Icons.settings),
-              tooltip: 'Settings & Model Config',
-              onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SettingsView()),
-                );
-                // Synchronize intelligence service with newly saved config
-                widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
-              },
-            ),
-            // Export Menu: Markdown, Benchling ELN JSON, and BibTeX
             PopupMenuButton<String>(
-              icon: const Icon(Icons.share),
-              tooltip: 'Export Research Notes & Citations',
+              icon: const Icon(Icons.file_download_outlined),
+              tooltip: 'Export Meeting Minutes & Deliverables',
               onSelected: (value) async {
                 if (_currentSession == null) {
                   _showSnackBar('No session to export. Record or load a session first.');
@@ -1740,12 +1703,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 }
                 if (value == 'markdown') {
                   await ExportService().exportSessionAsMarkdown(_currentSession!);
-                } else if (value == 'eln') {
-                  await ExportService().exportSessionAsELNJson(_currentSession!);
-                } else if (value == 'bibtex') {
-                  await ExportService().exportTranscriptAsPlainText(_currentSession!);
                 } else if (value == 'csv') {
                   await ExportService().exportActionItemsAsCsv(_currentSession!);
+                } else if (value == 'txt') {
+                  await ExportService().exportTranscriptAsPlainText(_currentSession!);
+                } else if (value == 'eln') {
+                  await ExportService().exportSessionAsELNJson(_currentSession!);
                 }
               },
               itemBuilder: (context) => const [
@@ -1753,8 +1716,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   value: 'markdown',
                   child: Row(
                     children: [
-                      Icon(Icons.description, size: 18, color: Colors.teal),
-                      SizedBox(width: 8),
+                      Icon(Icons.description_outlined, size: 18),
+                      SizedBox(width: 10),
                       Text('Meeting Minutes (.md)'),
                     ],
                   ),
@@ -1763,9 +1726,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   value: 'csv',
                   child: Row(
                     children: [
-                      Icon(Icons.table_chart, size: 18, color: Colors.green),
-                      SizedBox(width: 8),
-                      Text('Action Items (.csv) [Jira/Excel]'),
+                      Icon(Icons.table_chart_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Text('Action Items (.csv)'),
                     ],
                   ),
                 ),
@@ -1773,8 +1736,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   value: 'txt',
                   child: Row(
                     children: [
-                      Icon(Icons.text_snippet, size: 18, color: Colors.blueGrey),
-                      SizedBox(width: 8),
+                      Icon(Icons.text_snippet_outlined, size: 18),
+                      SizedBox(width: 10),
                       Text('Plain Transcript (.txt)'),
                     ],
                   ),
@@ -1783,29 +1746,27 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   value: 'eln',
                   child: Row(
                     children: [
-                      Icon(Icons.code, size: 18, color: Colors.indigo),
-                      SizedBox(width: 8),
-                      Text('Meeting JSON (.json)'),
+                      Icon(Icons.data_object_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Text('Session Data (.json)'),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.tune_outlined),
+              tooltip: 'Model & Audio Settings',
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SettingsView()),
+                );
+                widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
+              },
+            ),
+            const SizedBox(width: 12),
           ],
-          bottom: (isDesktop && !_isMeetingCompactMode)
-              ? TabBar(
-                  controller: _tabController,
-                  isScrollable: false,
-                  tabs: const [
-                    Tab(icon: Icon(Icons.article_outlined), text: 'Summary'),
-                    Tab(icon: Icon(Icons.task_alt), text: 'Tasks & Decisions'),
-                    Tab(icon: Icon(Icons.record_voice_over), text: 'Transcript'),
-                    Tab(icon: Icon(Icons.bar_chart), text: 'Analytics'),
-                    Tab(icon: Icon(Icons.smart_toy_outlined), text: 'AI Assistant'),
-                  ],
-                )
-              : null,
         ),
         body: _buildResponsiveBody(context, theme, isDesktop),
         bottomNavigationBar: (!isDesktop && !_isMeetingCompactMode)
@@ -1846,21 +1807,48 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       return Row(
         children: [
           SizedBox(
-            width: 400,
+            width: 380,
             child: SingleChildScrollView(
               child: _buildRecordingControlPanel(theme),
             ),
           ),
-          const VerticalDivider(width: 1, thickness: 1),
+          VerticalDivider(width: 1, thickness: 1, color: theme.colorScheme.outlineVariant),
           Expanded(
-            child: TabBarView(
-              controller: _tabController,
+            child: Column(
               children: [
-                _buildSummaryTab(theme),
-                _buildTasksAndDecisionsTab(theme),
-                _buildTranscriptTab(theme),
-                _buildSpeakerAnalyticsTab(theme),
-                _buildChatTab(theme),
+                Container(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant)),
+                  ),
+                  child: TabBar(
+                    controller: _tabController,
+                    isScrollable: false,
+                    labelColor: theme.colorScheme.primary,
+                    unselectedLabelColor: theme.colorScheme.onSurface.withOpacity(0.6),
+                    indicatorColor: theme.colorScheme.primary,
+                    indicatorWeight: 2.5,
+                    tabs: const [
+                      Tab(icon: Icon(Icons.article_outlined, size: 18), text: 'Summary'),
+                      Tab(icon: Icon(Icons.check_circle_outline, size: 18), text: 'Action Items'),
+                      Tab(icon: Icon(Icons.description_outlined, size: 18), text: 'Transcript'),
+                      Tab(icon: Icon(Icons.pie_chart_outline, size: 18), text: 'Speakers'),
+                      Tab(icon: Icon(Icons.smart_toy_outlined, size: 18), text: 'AI Assistant'),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildSummaryTab(theme),
+                      _buildTasksAndDecisionsTab(theme),
+                      _buildTranscriptTab(theme),
+                      _buildSpeakerAnalyticsTab(theme),
+                      _buildChatTab(theme),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -2174,324 +2162,382 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   Widget _buildRecordingControlPanel(ThemeData theme) {
     return Container(
       color: theme.colorScheme.surface,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Meeting Title Field
           TextField(
             controller: _titleController,
-            decoration: const InputDecoration(
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            decoration: InputDecoration(
               labelText: 'Meeting Title',
-              hintText: 'e.g. Q4 Cloud Migration & Architecture Review',
-              prefixIcon: Icon(Icons.meeting_room_outlined),
-              border: OutlineInputBorder(),
+              hintText: 'e.g. Weekly Product Sync & Roadmap',
+              prefixIcon: Icon(Icons.edit_note, color: theme.colorScheme.primary, size: 20),
               isDense: true,
             ),
           ),
           const SizedBox(height: 12),
 
-          // Domain Selector (Corporate, Engineering, Product, Sales, etc.)
-          _buildMeetingDomainSelector(theme),
-          const SizedBox(height: 10),
-
-          // Audio Quality Selector (Hi-Fi 128 kbps, Studio 256 kbps, Compact 64 kbps)
-          _buildAudioQualitySelector(theme),
-          const SizedBox(height: 10),
-
-          // Audio Input Microphone Device Selector
-          _buildAudioDeviceSelector(theme),
-          const SizedBox(height: 10),
-
-          // Multilingual Selector (English, Hindi, Hinglish)
-          _buildLanguageSelector(theme),
-          const SizedBox(height: 14),
-
-          // Recording Timer Display
-          Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer.withOpacity(0.25),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: _recordingState == RecordingState.recording
-                      ? Colors.redAccent
-                      : theme.colorScheme.outlineVariant,
+          // Compact Configuration Panel (Domain, Language, Microphone, Quality)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.35),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.6)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    // Domain Dropdown
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Icon(Icons.business_center_outlined, size: 15, color: theme.colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: _selectedMeetingDomain,
+                                isDense: true,
+                                isExpanded: true,
+                                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5, color: theme.colorScheme.onSurface),
+                                items: _domainOptions.map((domain) {
+                                  return DropdownMenuItem(value: domain, child: Text(domain, overflow: TextOverflow.ellipsis));
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setState(() => _selectedMeetingDomain = val);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Language Dropdown
+                    Expanded(
+                      child: Row(
+                        children: [
+                          const Icon(Icons.language, size: 15, color: Colors.blueAccent),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: _selectedLanguage,
+                                isDense: true,
+                                isExpanded: true,
+                                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5, color: theme.colorScheme.onSurface),
+                                items: const [
+                                  DropdownMenuItem(value: 'auto', child: Text('🌐 Auto')),
+                                  DropdownMenuItem(value: 'en', child: Text('🇬🇧 English')),
+                                  DropdownMenuItem(value: 'hi', child: Text('🇮🇳 हिन्दी')),
+                                  DropdownMenuItem(value: 'hinglish', child: Text('🇮🇳 Hinglish')),
+                                ],
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setState(() => _selectedLanguage = val);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
+                Divider(height: 14, thickness: 0.7, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+                Row(
+                  children: [
+                    // Microphone Selector
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Icon(Icons.mic_none, size: 15, color: theme.colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: _audioInputDevices.isEmpty
+                                ? const Text('Default Mic', style: TextStyle(fontSize: 11.5), overflow: TextOverflow.ellipsis)
+                                : DropdownButtonHideUnderline(
+                                    child: DropdownButton<String>(
+                                      value: _selectedDeviceId,
+                                      isDense: true,
+                                      isExpanded: true,
+                                      style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5, color: theme.colorScheme.onSurface),
+                                      items: _audioInputDevices.map((dev) {
+                                        return DropdownMenuItem<String>(
+                                          value: dev.id,
+                                          child: Text(dev.label.isNotEmpty ? dev.label : 'Mic (${dev.id})', overflow: TextOverflow.ellipsis),
+                                        );
+                                      }).toList(),
+                                      onChanged: (id) {
+                                        if (id != null) {
+                                          setState(() {
+                                            _selectedDeviceId = id;
+                                            _selectedInputDevice = _audioInputDevices.firstWhere((d) => d.id == id);
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Audio Fidelity
+                    Expanded(
+                      child: Row(
+                        children: [
+                          const Icon(Icons.graphic_eq, size: 15, color: Colors.blueAccent),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: _audioQuality,
+                                isDense: true,
+                                isExpanded: true,
+                                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5, color: theme.colorScheme.onSurface),
+                                items: const [
+                                  DropdownMenuItem(value: 'High Fidelity (128 kbps)', child: Text('128 kbps Hi-Fi')),
+                                  DropdownMenuItem(value: 'Studio Voice (256 kbps)', child: Text('256 kbps Studio')),
+                                  DropdownMenuItem(value: 'Compact Voice (64 kbps)', child: Text('64 kbps Voice')),
+                                ],
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setState(() => _audioQuality = val);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Hero Recording Card
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: _recordingState == RecordingState.recording
+                    ? Colors.redAccent.withOpacity(0.6)
+                    : theme.colorScheme.outlineVariant,
+                width: _recordingState == RecordingState.recording ? 1.5 : 1.0,
               ),
-              child: Column(
-                children: [
-                  Text(
-                    _formatDuration(_recordDurationSeconds),
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                      color: _recordingState == RecordingState.recording
-                          ? Colors.redAccent
-                          : theme.colorScheme.onSurface,
+            ),
+            child: Column(
+              children: [
+                // Digital Stopwatch Timer
+                Text(
+                  _formatDuration(_recordDurationSeconds),
+                  style: TextStyle(
+                    fontSize: 34,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2.5,
+                    fontFamily: 'monospace',
+                    color: _recordingState == RecordingState.recording ? Colors.redAccent : theme.colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                // Live Status Indicator Dot
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _recordingState == RecordingState.recording
+                            ? Colors.redAccent
+                            : (_recordingState == RecordingState.paused ? Colors.orange : Colors.green),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _recordingState == RecordingState.recording
+                          ? 'RECORDING ACTIVE'
+                          : (_recordingState == RecordingState.paused ? 'RECORDING PAUSED' : 'READY TO RECORD'),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 10.5,
+                        letterSpacing: 0.8,
+                        color: _recordingState == RecordingState.recording
+                            ? Colors.redAccent
+                            : (_recordingState == RecordingState.paused ? Colors.orange : Colors.grey),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                // Live 28-Bar Waveform
+                _buildLiveWaveformVisualizer(theme),
+                const SizedBox(height: 8),
+
+                // Decibel Meter Gauge
+                _buildDecibelMeterGauge(theme),
+                const SizedBox(height: 14),
+
+                // Primary Record Buttons
+                if (_recordingState == RecordingState.idle || _recordingState == RecordingState.stopped) ...[
+                  FilledButton.icon(
+                    onPressed: _startRecording,
+                    icon: const Icon(Icons.fiber_manual_record, color: Colors.white, size: 16),
+                    label: const Text('Record Meeting', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(42),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _recordingState == RecordingState.recording
-                              ? Colors.redAccent
-                              : (_recordingState == RecordingState.paused ? Colors.orange : Colors.grey),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _importAudioFileDialog,
+                          icon: const Icon(Icons.file_upload_outlined, size: 15),
+                          label: const Text('Import Audio', style: TextStyle(fontSize: 11.5)),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        _recordingState == RecordingState.recording
-                            ? 'AIR-GAPPED RECORDING ACTIVE'
-                            : _recordingState.name.toUpperCase(),
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _showPasteTranscriptDialog,
+                          icon: const Icon(Icons.content_paste_outlined, size: 15),
+                          label: const Text('Paste Notes', style: TextStyle(fontSize: 11.5)),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
                       ),
                     ],
                   ),
                 ],
-              ),
+                if (_recordingState == RecordingState.recording) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _pauseRecording,
+                          icon: const Icon(Icons.pause, size: 16),
+                          label: const Text('Pause'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _stopRecording,
+                          icon: const Icon(Icons.stop, size: 16),
+                          label: const Text('Stop & Save'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.redAccent,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (_recordingState == RecordingState.paused) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _resumeRecording,
+                          icon: const Icon(Icons.play_arrow, size: 16),
+                          label: const Text('Resume'),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _stopRecording,
+                          icon: const Icon(Icons.stop, size: 16),
+                          label: const Text('Finish'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
             ),
           ),
-          const SizedBox(height: 12),
 
-          // Live 28-Bar Waveform Visualizer
-          _buildLiveWaveformVisualizer(theme),
-          const SizedBox(height: 10),
-
-          // Real-time Decibel Meter (-60 dB to 0 dB)
-          _buildDecibelMeterGauge(theme),
-          const SizedBox(height: 12),
-
-          // Recording Controls
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              if (_recordingState == RecordingState.idle || _recordingState == RecordingState.stopped) ...[
-                ElevatedButton.icon(
-                  onPressed: _startRecording,
-                  icon: const Icon(Icons.fiber_manual_record, color: Colors.white),
-                  label: const Text('Record'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _importAudioFileDialog,
-                  icon: const Icon(Icons.file_upload_outlined, size: 16),
-                  label: const Text('Import Audio'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _showPasteTranscriptDialog,
-                  icon: const Icon(Icons.paste, size: 16),
-                  label: const Text('Paste Text'),
-                ),
-              ],
-              if (_recordingState == RecordingState.recording) ...[
-                OutlinedButton.icon(
-                  onPressed: _pauseRecording,
-                  icon: const Icon(Icons.pause),
-                  label: const Text('Pause'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _stopRecording,
-                  icon: const Icon(Icons.stop),
-                  label: const Text('Stop & Save'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueGrey,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-              if (_recordingState == RecordingState.paused) ...[
-                ElevatedButton.icon(
-                  onPressed: _resumeRecording,
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Resume'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _stopRecording,
-                  icon: const Icon(Icons.stop),
-                  label: const Text('Stop & Save'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueGrey,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          // 1-Click Meeting Action Tag Chips
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            alignment: WrapAlignment.center,
-            children: [
-              ActionChip(
-                visualDensity: VisualDensity.compact,
-                avatar: const Text('⚡', style: TextStyle(fontSize: 12)),
-                label: const Text('Action', style: TextStyle(fontSize: 11)),
-                onPressed: () => _quickAddTag('⚡', 'Action Item'),
-              ),
-              ActionChip(
-                visualDensity: VisualDensity.compact,
-                avatar: const Text('📌', style: TextStyle(fontSize: 12)),
-                label: const Text('Decision', style: TextStyle(fontSize: 11)),
-                onPressed: () => _quickAddTag('📌', 'Decision'),
-              ),
-              ActionChip(
-                visualDensity: VisualDensity.compact,
-                avatar: const Text('💡', style: TextStyle(fontSize: 12)),
-                label: const Text('Idea', style: TextStyle(fontSize: 11)),
-                onPressed: () => _quickAddTag('💡', 'Idea'),
-              ),
-              ActionChip(
-                visualDensity: VisualDensity.compact,
-                avatar: const Text('⚠️', style: TextStyle(fontSize: 12)),
-                label: const Text('Risk / Blocker', style: TextStyle(fontSize: 11)),
-                onPressed: () => _quickAddTag('⚠️', 'Risk / Blocker'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          // Bookmark Dialog Button & Slide Attachment
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _addLiveMeetingNoteDialog,
-                  icon: const Icon(Icons.bookmark_add, color: Colors.orange, size: 16),
-                  label: Text('Note @ ${_formatDuration(_recordDurationSeconds)}', style: const TextStyle(fontSize: 11)),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.orange),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _attachFigureDialog,
-                  icon: const Icon(Icons.add_photo_alternate, size: 16),
-                  label: const Text('Slide / Visual', style: TextStyle(fontSize: 11)),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          // Real-time speech preview during live recording
+          // Real-time Speech Preview when recording
           _buildRealtimeTranscriptionPanel(theme),
-          const SizedBox(height: 10),
 
-          // Audio Player bar (play, seek, speed, skip)
+          // Audio Playback Bar when audio is recorded/loaded
           _buildAudioPlaybackBar(theme),
-          const SizedBox(height: 10),
 
-          // Sensitive Data & PII Redaction Switch
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: const Text('Sensitive Data & PII Redaction', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              subtitle: const Text('Mask names, credentials & identifiers', style: TextStyle(fontSize: 10)),
-              value: _enableSensitiveDataRedaction,
-              onChanged: (val) {
-                setState(() {
-                  _enableSensitiveDataRedaction = val;
-                });
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Virtual Call Mode Switch
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    title: const Text('Virtual Call Mode', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Zoom / Teams / Meet loopback', style: TextStyle(fontSize: 10)),
-                    value: _isVirtualCallMode,
-                    onChanged: (val) {
-                      setState(() {
-                        _isVirtualCallMode = val;
-                        if (_currentSession != null) {
-                          _currentSession!.isVirtualCall = val;
-                        }
-                      });
-                      if (_currentSession != null) {
-                        SessionRepository().saveSession(_currentSession!);
-                      }
-                    },
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.help_outline, size: 18, color: Colors.blueAccent),
-                  tooltip: 'Virtual Call Audio Capture Guide',
-                  onPressed: _showVirtualCallGuideDialog,
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 12),
 
-          // Process AI Meeting Intelligence Button
-          ElevatedButton.icon(
+          // Process AI Meeting Intelligence CTA Button
+          FilledButton.icon(
             onPressed: (_recordingState == RecordingState.stopped || _currentSession != null) &&
                     _processingStage != ProcessingStage.transcribing &&
                     _processingStage != ProcessingStage.summarizing
                 ? _executeAiPipeline
                 : null,
-            icon: const Icon(Icons.auto_awesome),
-            label: const Text('Process AI Tasks & Insights'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: theme.colorScheme.primary,
-              foregroundColor: theme.colorScheme.onPrimary,
-              padding: const EdgeInsets.symmetric(vertical: 14),
+            icon: const Icon(Icons.auto_awesome, size: 16),
+            label: const Text('Process Meeting Insights', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF4F46E5),
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(44),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
 
           // Progress Indicator & Status Message
           if (_processingStage != ProcessingStage.idle) ...[
-            LinearProgressIndicator(
-              value: _processingStage == ProcessingStage.completed
-                  ? 1.0
-                  : (_processingStage == ProcessingStage.transcribing
-                      ? 0.3
-                      : _processingStage == ProcessingStage.deidentifying
-                          ? 0.5
-                          : 0.8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: _processingStage == ProcessingStage.completed
+                    ? 1.0
+                    : (_processingStage == ProcessingStage.transcribing
+                        ? 0.3
+                        : _processingStage == ProcessingStage.deidentifying
+                            ? 0.5
+                            : 0.8),
+                minHeight: 4,
+              ),
             ),
             const SizedBox(height: 6),
           ],
@@ -2500,29 +2546,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline, fontSize: 11),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 12),
-
-          // Air-Gapped Local Cache Indicator
-          if (_recordedAudioPath != null)
-            Card(
-              elevation: 0,
-              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Air-Gapped Local Audio Cache:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                    const SizedBox(height: 2),
-                    Text(
-                      _recordedAudioPath!,
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -2922,7 +2945,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   Widget _buildSummaryTab(ThemeData theme) {
     final summary = _currentSession?.summary;
     if (summary == null) {
-      return _buildEmptyState('No executive meeting summary generated yet. Record or import audio and click "Process AI Tasks & Insights".');
+      return _buildEmptyState('No executive meeting summary generated yet. Record or import audio and click "Process Meeting Insights".');
     }
 
     final wordCount = _currentSession?.transcript.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length ?? 0;
@@ -2934,11 +2957,11 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         : summary.executiveSummary;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title & Toolbar
+          // Title & Metadata Toolbar
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -2946,26 +2969,25 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Executive Briefing & Synthesis', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
+                    Text('Executive Summary & Insights', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700, fontSize: 20)),
+                    const SizedBox(height: 6),
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.12),
+                            color: const Color(0xFF4F46E5).withOpacity(0.1),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.blue.withOpacity(0.3)),
                           ),
                           child: Text(
                             _selectedMeetingDomain,
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue),
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF4F46E5)),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 10),
                         Text(
                           '$wordCount words • ${durMin.toStringAsFixed(1)} min • $paceWpm WPM',
-                          style: const TextStyle(fontSize: 11, color: Colors.grey),
+                          style: TextStyle(fontSize: 12, color: theme.colorScheme.outline),
                         ),
                       ],
                     ),
@@ -2981,176 +3003,186 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.translate, size: 14),
                     label: Text(_showTranslatedSummary ? 'Original (EN)' : 'हिन्दी (Hindi)'),
-                    style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  Chip(
-                    label: Text(summary.detectedLanguage),
-                    backgroundColor: theme.colorScheme.primaryContainer.withOpacity(0.5),
-                    visualDensity: VisualDensity.compact,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      summary.detectedLanguage.toUpperCase(),
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface),
+                    ),
                   ),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 20),
 
-          // 21 CFR Part 11 / Enterprise Cryptographic Audit Trail Card
-          if (_currentSession?.audioSha256 != null || _currentSession?.transcriptSha256 != null) ...[
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.indigo.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.indigo.withOpacity(0.3)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.verified, size: 16, color: Colors.indigo),
-                      SizedBox(width: 6),
-                      Text(
-                        '21 CFR PART 11 / ENTERPRISE CRYPTOGRAPHIC SEAL',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.indigo),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  if (_currentSession?.audioSha256 != null)
-                    Row(
-                      children: [
-                        const Text('Audio SHA-256: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                        Expanded(
-                          child: Text(
-                            _currentSession!.audioSha256!,
-                            style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.copy, size: 14),
-                          tooltip: 'Copy Audio SHA-256',
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: _currentSession!.audioSha256!));
-                            _showSnackBar('Audio SHA-256 copied to clipboard');
-                          },
-                        ),
-                      ],
-                    ),
-                  if (_currentSession?.transcriptSha256 != null)
-                    Row(
-                      children: [
-                        const Text('Transcript SHA-256: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                        Expanded(
-                          child: Text(
-                            _currentSession!.transcriptSha256!,
-                            style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.copy, size: 14),
-                          tooltip: 'Copy Transcript SHA-256',
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: _currentSession!.transcriptSha256!));
-                            _showSnackBar('Transcript SHA-256 copied to clipboard');
-                          },
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-          ],
-
-          // Executive Summary Text Card
+          // Executive Summary Card
           Card(
             elevation: 0,
-            color: theme.colorScheme.surfaceContainerLow,
+            color: theme.colorScheme.surface,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-              side: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: theme.colorScheme.outlineVariant),
             ),
             child: Padding(
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Icon(Icons.article, color: Colors.teal, size: 18),
-                      SizedBox(width: 8),
-                      Text(
-                        _showTranslatedSummary ? 'कार्यकारी सारांश (Executive Summary)' : 'Executive Summary',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      Row(
+                        children: [
+                          Icon(Icons.notes, color: theme.colorScheme.primary, size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            _showTranslatedSummary ? 'कार्यकारी सारांश (Executive Summary)' : 'Executive Briefing',
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14.5),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.copy, size: 16),
+                        tooltip: 'Copy Summary',
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: displayedSummary));
+                          _showSnackBar('Executive summary copied to clipboard');
+                        },
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   Text(
                     displayedSummary,
-                    style: theme.textTheme.bodyLarge?.copyWith(height: 1.6, fontSize: 14),
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      height: 1.6,
+                      fontSize: 14,
+                      color: theme.colorScheme.onSurface.withOpacity(0.9),
+                    ),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 20),
 
-          // Key Discussion Takeaways
-          Text('Key Discussion Takeaways', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          ...summary.keyPoints.map((point) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.check_circle_outline, size: 18, color: Colors.teal),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text(point, style: const TextStyle(fontSize: 13.5, height: 1.4))),
-                  ],
-                ),
-              )),
-          const SizedBox(height: 20),
-
-          // Protocol & Consensus Decisions
-          if (summary.decisionsMade.isNotEmpty) ...[
-            Text('Key Decisions Logged', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            ...summary.decisionsMade.map((decision) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+          // Key Discussion Points
+          if (summary.keyPoints.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Text(
+              'Key Discussion Points',
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            ...summary.keyPoints.map((point) => Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.7)),
+                  ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.gavel, size: 18, color: Colors.blueAccent),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text(decision, style: const TextStyle(fontSize: 13.5, height: 1.4))),
+                      Container(
+                        margin: const EdgeInsets.only(top: 2),
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4F46E5).withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.check, size: 12, color: Color(0xFF4F46E5)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          point,
+                          style: const TextStyle(fontSize: 13.5, height: 1.45),
+                        ),
+                      ),
                     ],
                   ),
                 )),
-            const SizedBox(height: 20),
+          ],
+
+          // Consensus Decisions Log
+          if (summary.decisionsMade.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Text(
+              'Decisions Recorded',
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            ...summary.decisionsMade.asMap().entries.map((entry) {
+              final idx = entry.key + 1;
+              final decision = entry.value;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4F46E5).withOpacity(0.04),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF4F46E5).withOpacity(0.2)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4F46E5).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'D$idx',
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: Color(0xFF4F46E5)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        decision,
+                        style: const TextStyle(fontSize: 13.5, height: 1.45),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
           ],
 
           // Live In-Meeting Annotations & Bookmarks
           if (_currentSession?.liveNotes.isNotEmpty == true) ...[
+            const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 12),
             Row(
               children: [
-                const Icon(Icons.bookmark, color: Colors.orange, size: 20),
+                const Icon(Icons.bookmark_border, color: Colors.orange, size: 20),
                 const SizedBox(width: 8),
-                Text('In-Meeting Bookmarks & Flags (${_currentSession!.liveNotes.length})',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                Text('In-Meeting Flags (${_currentSession!.liveNotes.length})',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, fontSize: 15)),
               ],
             ),
             const SizedBox(height: 8),
             ..._currentSession!.liveNotes.map((note) => Card(
                   margin: const EdgeInsets.symmetric(vertical: 4),
-                  color: Colors.orange.withOpacity(0.06),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  color: Colors.orange.withOpacity(0.04),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(color: Colors.orange.withOpacity(0.2)),
+                  ),
                   child: ListTile(
                     dense: true,
                     leading: InkWell(
@@ -3158,7 +3190,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.2),
+                          color: Colors.orange.withOpacity(0.15),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -3172,26 +3204,26 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 )),
           ],
 
-          // Attached Figures with In-App Lightbox Zoom
+          // Attached Figures / Slides
           if (_currentSession?.slideAttachments.isNotEmpty == true) ...[
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 12),
             Row(
               children: [
-                const Icon(Icons.image, color: Colors.teal, size: 20),
+                Icon(Icons.image_outlined, color: theme.colorScheme.primary, size: 20),
                 const SizedBox(width: 8),
-                Text('Attached Slides & Visuals (Tap to Inspect)',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                Text('Attached Slides & Visuals',
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, fontSize: 15)),
               ],
             ),
             const SizedBox(height: 8),
             ..._currentSession!.slideAttachments.map((slide) => Card(
                   margin: const EdgeInsets.symmetric(vertical: 4),
                   child: ListTile(
-                    leading: const Icon(Icons.zoom_in, color: Colors.teal),
-                    title: Text(slide.caption, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('Logged at ${_formatDuration(slide.timestampSeconds)} (Tap to inspect figure)'),
+                    leading: Icon(Icons.zoom_in, color: theme.colorScheme.primary),
+                    title: Text(slide.caption, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    subtitle: Text('Captured at ${_formatDuration(slide.timestampSeconds)}', style: const TextStyle(fontSize: 11)),
                     onTap: () => _showFigureLightbox(slide),
                   ),
                 )),
@@ -3214,7 +3246,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     final completedCount = tasks.where((t) => t.isCompleted).length;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -3225,11 +3257,11 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Tasks & Decisions Log', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
+                  Text('Tasks & Decisions Log', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700, fontSize: 20)),
+                  const SizedBox(height: 6),
                   Text(
                     '${decisions.length} Decisions • $completedCount/${tasks.length} Action Items Completed',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(fontSize: 12, color: theme.colorScheme.outline),
                   ),
                 ],
               ),
@@ -3240,90 +3272,92 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                     _showSnackBar('Exported action items as CSV (Excel/Jira compatible)!');
                   },
                   icon: const Icon(Icons.file_download_outlined, size: 16),
-                  label: const Text('Export CSV (Jira/Excel)'),
+                  label: const Text('Export CSV'),
+                  style: FilledButton.styleFrom(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
 
           // Section: Decisions Log
           if (decisions.isNotEmpty) ...[
-            Card(
-              elevation: 0,
-              color: Colors.blue.withOpacity(0.06),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: BorderSide(color: Colors.blue.withOpacity(0.3)),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: const Color(0xFF4F46E5).withOpacity(0.04),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF4F46E5).withOpacity(0.2)),
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.gavel, size: 18, color: Colors.blueAccent),
-                        SizedBox(width: 8),
-                        Text(
-                          'DECISIONS LOG (CONSENSUS REGISTER)',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.blueAccent),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    ...decisions.asMap().entries.map((entry) {
-                      final idx = entry.key + 1;
-                      final decision = entry.value;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.blueAccent.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                'D$idx',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Colors.blueAccent),
-                              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.gavel, size: 16, color: Color(0xFF4F46E5)),
+                      SizedBox(width: 8),
+                      Text(
+                        'DECISIONS RECORDED',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, letterSpacing: 0.5, color: Color(0xFF4F46E5)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ...decisions.asMap().entries.map((entry) {
+                    final idx = entry.key + 1;
+                    final decision = entry.value;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF4F46E5).withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(4),
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(decision, style: const TextStyle(fontSize: 13, height: 1.35)),
+                            child: Text(
+                              'D$idx',
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 10, color: Color(0xFF4F46E5)),
                             ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ],
-                ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(decision, style: const TextStyle(fontSize: 13, height: 1.4)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
           ],
 
           // Section: Action Items Checklist
-          Text('Action Items & Deliverables', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
+          Text('Action Items & Deliverables', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 12),
           ...tasks.map((item) {
-            Color priorityColor = Colors.blue;
-            if (item.priority.toLowerCase() == 'high') priorityColor = Colors.redAccent;
-            if (item.priority.toLowerCase() == 'medium') priorityColor = Colors.orangeAccent;
+            Color priorityColor = const Color(0xFF64748B);
+            if (item.priority.toLowerCase() == 'high') priorityColor = const Color(0xFFEF4444);
+            if (item.priority.toLowerCase() == 'medium') priorityColor = const Color(0xFFF59E0B);
 
-            return Card(
-              elevation: 1,
-              margin: const EdgeInsets.symmetric(vertical: 5),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(
-                  color: item.isCompleted ? Colors.green.withOpacity(0.3) : theme.colorScheme.outlineVariant.withOpacity(0.4),
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: item.isCompleted ? Colors.green.withOpacity(0.3) : theme.colorScheme.outlineVariant,
                 ),
               ),
               child: CheckboxListTile(
                 value: item.isCompleted,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                activeColor: const Color(0xFF4F46E5),
                 onChanged: (val) {
                   setState(() {
                     item.isCompleted = val ?? false;
@@ -3338,11 +3372,11 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                     decoration: item.isCompleted ? TextDecoration.lineThrough : null,
                     fontWeight: FontWeight.w600,
                     fontSize: 13.5,
-                    color: item.isCompleted ? Colors.grey : theme.colorScheme.onSurface,
+                    color: item.isCompleted ? theme.colorScheme.outline : theme.colorScheme.onSurface,
                   ),
                 ),
                 subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.only(top: 6),
                   child: Wrap(
                     spacing: 8,
                     runSpacing: 6,
@@ -3351,24 +3385,24 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.teal.withOpacity(0.12),
+                          color: const Color(0xFF4F46E5).withOpacity(0.08),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           item.category,
-                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.teal),
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF4F46E5)),
                         ),
                       ),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.person, size: 13, color: theme.colorScheme.primary),
+                          Icon(Icons.person_outline, size: 13, color: theme.colorScheme.primary),
                           const SizedBox(width: 4),
                           Text(item.assignee, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5)),
                         ],
                       ),
                       if (item.speaker != null)
-                        Text('(assigned by ${item.speaker})', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey)),
+                        Text('(assigned by ${item.speaker})', style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: theme.colorScheme.outline)),
                       if (item.deadline != null)
                         Row(
                           mainAxisSize: MainAxisSize.min,
@@ -3385,8 +3419,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          item.priority,
-                          style: TextStyle(fontSize: 10, color: priorityColor, fontWeight: FontWeight.bold),
+                          item.priority.toUpperCase(),
+                          style: TextStyle(fontSize: 10, color: priorityColor, fontWeight: FontWeight.w700),
                         ),
                       ),
                     ],
@@ -3511,7 +3545,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             ),
             child: Row(
               children: [
-                const Icon(Icons.search, size: 20, color: Colors.teal),
+                Icon(Icons.search, size: 20, color: theme.colorScheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
@@ -3532,12 +3566,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: Colors.teal.withOpacity(0.15),
+                      color: const Color(0xFF4F46E5).withOpacity(0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
                       '$matchCount matches',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.teal),
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5)),
                     ),
                   ),
                   IconButton(
@@ -3562,31 +3596,25 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Meeting Transcript',
-                        style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 8),
-                      Chip(
-                        label: Text('$wordCount words • ~$estimatedMin min read'),
-                        backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                        visualDensity: VisualDensity.compact,
-                        labelStyle: const TextStyle(fontSize: 11),
-                        side: BorderSide.none,
-                      ),
-                    ],
+                  Text(
+                    'Meeting Transcript',
+                    style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700, fontSize: 20),
                   ),
-                  if (_currentSession?.transcriptSha256 != null)
-                    Text(
-                      'SHA-256: ${_currentSession!.transcriptSha256!.substring(0, 16)}... (21 CFR Part 11 Sealed)',
-                      style: TextStyle(fontSize: 11, color: Colors.indigo.shade400, fontFamily: 'monospace'),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(6),
                     ),
+                    child: Text(
+                      '$wordCount words • ~$estimatedMin min read',
+                      style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface.withOpacity(0.8)),
+                    ),
+                  ),
                 ],
               ),
               Wrap(
@@ -3595,26 +3623,38 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 children: [
                   OutlinedButton.icon(
                     onPressed: _copyTranscriptToClipboard,
-                    icon: const Icon(Icons.copy, size: 16),
+                    icon: const Icon(Icons.copy, size: 15),
                     label: const Text('Copy'),
+                    style: OutlinedButton.styleFrom(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                   FilledButton.tonalIcon(
                     onPressed: _showSaveTranscriptMenu,
-                    icon: const Icon(Icons.save_alt, size: 16),
+                    icon: const Icon(Icons.save_alt, size: 15),
                     label: const Text('Save Transcript'),
+                    style: FilledButton.styleFrom(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                   OutlinedButton.icon(
                     onPressed: _toggleEditTranscript,
-                    icon: Icon(_isTranscriptEditMode ? Icons.visibility : Icons.edit_note, size: 16),
+                    icon: Icon(_isTranscriptEditMode ? Icons.visibility : Icons.edit_note, size: 15),
                     label: Text(_isTranscriptEditMode ? 'View' : 'Edit / Paste'),
+                    style: OutlinedButton.styleFrom(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                   FilledButton.icon(
                     onPressed: _isTranslatingTranscript ? null : _toggleTranslateTranscript,
                     icon: _isTranslatingTranscript
                         ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.translate, size: 16),
+                        : const Icon(Icons.translate, size: 15),
                     label: Text(_showTranslatedTranscript ? 'View Original' : 'Translate (हिन्दी)'),
-                    style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF4F46E5),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
                   ),
                 ],
               ),
@@ -3628,18 +3668,18 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               margin: const EdgeInsets.only(bottom: 16),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: Colors.teal.withOpacity(0.1),
+                color: const Color(0xFF4F46E5).withOpacity(0.08),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.teal.withOpacity(0.3)),
+                border: Border.all(color: const Color(0xFF4F46E5).withOpacity(0.2)),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.g_translate, color: Colors.teal, size: 18),
+                  const Icon(Icons.g_translate, color: Color(0xFF4F46E5), size: 18),
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
                       'प्रदर्शित: प्रतिलेख का हिन्दी अनुवाद (Viewing Hindi Translation)',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.teal),
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Color(0xFF4F46E5)),
                     ),
                   ),
                   TextButton(

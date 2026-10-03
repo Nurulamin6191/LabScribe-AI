@@ -19,17 +19,16 @@ class _SettingsViewState extends State<SettingsView> {
   late TextEditingController _transcriptionModelController;
   late TextEditingController _translateUrlController;
   
-  String _selectedPreset = '⚡ Zero-Setup Instant Open AI (Default — Just Install & Use)';
+  String _selectedPreset = '✨ Ready-to-Use Open AI (Default — No API Key Required)';
 
   final List<String> _presets = [
-    '⚡ Zero-Setup Instant Open AI (Default — Just Install & Use)',
-    '📴 100% Offline Built-In Engine (Air-Gapped / No Internet)',
+    '✨ Ready-to-Use Open AI (Default — No API Key Required)',
     '☁️ Cloud: Groq Fast Tier (Whisper Large-v3 + Llama 3.3)',
     '☁️ Cloud: OpenAI (Whisper-1 + GPT-4o-mini)',
     '💻 Local PC: Balanced (Qwen 2.5 7B + Faster-Whisper)',
-    '💻 Local PC: Biomedical Specialist (BioMistral 7B + Faster-Whisper)',
     '💻 Local PC: Ultra-Compact (Qwen 2.5 1.5B + Whisper Base)',
-    '🔬 Lab Server: vLLM High-Throughput (Port 8000)',
+    '📴 100% Offline Built-In Engine (Air-Gapped / No Internet)',
+    '🔬 Local Server: vLLM High-Throughput (Port 8000)',
     '⚙️ Custom Endpoint',
   ];
 
@@ -52,21 +51,19 @@ class _SettingsViewState extends State<SettingsView> {
     final model = _llmModelController.text;
 
     if (url.contains('pollinations.ai')) {
-      _selectedPreset = '⚡ Zero-Setup Instant Open AI (Default — Just Install & Use)';
+      _selectedPreset = '✨ Ready-to-Use Open AI (Default — No API Key Required)';
     } else if (url == 'demo' || ConfigService().isDemoMode) {
       _selectedPreset = '📴 100% Offline Built-In Engine (Air-Gapped / No Internet)';
     } else if (url.contains('api.groq.com')) {
       _selectedPreset = '☁️ Cloud: Groq Fast Tier (Whisper Large-v3 + Llama 3.3)';
     } else if (url.contains('api.openai.com')) {
       _selectedPreset = '☁️ Cloud: OpenAI (Whisper-1 + GPT-4o-mini)';
-    } else if (model.contains('biomistral')) {
-      _selectedPreset = '💻 Local PC: Biomedical Specialist (BioMistral 7B + Faster-Whisper)';
     } else if (url.contains('localhost:11434') && model.contains('1.5b')) {
       _selectedPreset = '💻 Local PC: Ultra-Compact (Qwen 2.5 1.5B + Whisper Base)';
     } else if (url.contains('localhost:11434')) {
       _selectedPreset = '💻 Local PC: Balanced (Qwen 2.5 7B + Faster-Whisper)';
     } else if (url.contains(':8000')) {
-      _selectedPreset = '🔬 Lab Server: vLLM High-Throughput (Port 8000)';
+      _selectedPreset = '🔬 Local Server: vLLM High-Throughput (Port 8000)';
     } else {
       _selectedPreset = '⚙️ Custom Endpoint';
     }
@@ -75,11 +72,11 @@ class _SettingsViewState extends State<SettingsView> {
   void _applyPreset(String preset) {
     setState(() {
       _selectedPreset = preset;
-      if (preset.startsWith('⚡ Zero-Setup')) {
+      if (preset.startsWith('✨ Ready-to-Use')) {
         _baseUrlController.text = 'https://text.pollinations.ai/openai';
         _apiKeyController.clear();
         _llmModelController.text = 'openai-fast';
-        _transcriptionBaseUrlController.text = 'demo';
+        _transcriptionBaseUrlController.text = '';
         _transcriptionApiKeyController.clear();
         _transcriptionModelController.text = 'built-in-whisper';
       } else if (preset.startsWith('📴 100% Offline')) {
@@ -157,12 +154,12 @@ class _SettingsViewState extends State<SettingsView> {
   }
 
   Future<void> _testConnection() async {
-    if (_baseUrlController.text == 'demo' || _selectedPreset.startsWith('⚡ Zero-Setup')) {
+    if (_baseUrlController.text == 'demo' || _selectedPreset.startsWith('✨ Ready-to-Use')) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('⚡ Zero-Setup Instant AI active! Ready to record and analyze immediately.'),
-            backgroundColor: Colors.teal,
+            content: Text('Ready-to-use cloud endpoint active. Ready to record and analyze.'),
+            backgroundColor: Color(0xFF4F46E5),
           ),
         );
       }
@@ -246,11 +243,11 @@ class _SettingsViewState extends State<SettingsView> {
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Zero-Setup Quick Start:\n'
-                        '• Zero-Setup Instant Open AI: Just install and use — works right out of the box with open models (no login, no API key, no CLI).\n'
-                        '• 100% Offline Built-In: Air-gapped pure on-device biomedical intelligence without internet.\n'
-                        '• Groq Fast Tier / OpenAI: Connect live cloud keys if desired.\n'
-                        '• Local PC (Ollama): For private air-gapped lab servers.',
+                        'Configuration Guide:\n'
+                        '• Ready-to-Use Open AI: Connects out of the box with standard open models.\n'
+                        '• Groq Fast Tier: High-speed cloud Whisper Large-v3 and Llama 3.3.\n'
+                        '• OpenAI: Direct access to OpenAI whisper-1 and GPT models.\n'
+                        '• Local PC (Ollama): 100% private, on-premise local inference with no data leakage.',
                         style: TextStyle(fontSize: 12.5, height: 1.4),
                       ),
                     ),

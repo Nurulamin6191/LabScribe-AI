@@ -90,7 +90,7 @@ class MeetingIntelligenceService {
       _config.openAiBaseUrl == 'demo' ||
       (_config.openAiApiKey.isEmpty && _config.openAiBaseUrl.contains('openai.com'));
 
-  /// General flag for UI badges indicating effortless zero-setup out of the box
+  /// General flag for demo or ready-to-use mode out of the box
   bool get isDemoMode =>
       isTranscriptionDemoMode ||
       isLlmDemoMode ||
