@@ -51,8 +51,8 @@ class MeetingIntelligenceService {
         _dio = dio ??
             Dio(
               BaseOptions(
-                connectTimeout: const Duration(seconds: 45),
-                receiveTimeout: const Duration(seconds: 300),
+                connectTimeout: const Duration(seconds: 15),
+                receiveTimeout: const Duration(seconds: 60),
               ),
             );
 
@@ -63,12 +63,23 @@ class MeetingIntelligenceService {
 
   AiConfig get config => _config;
 
-  /// Check whether system is configured for offline demo/simulation mode
-  bool get isDemoMode =>
+  /// Check whether speech-to-text is in built-in simulation mode
+  bool get isTranscriptionDemoMode =>
+      _config.isDemoMode ||
+      _config.transcriptionBaseUrl == 'demo' ||
+      (_config.transcriptionApiKey.isEmpty && _config.transcriptionBaseUrl.contains('openai.com'));
+
+  /// Check whether LLM intelligence is in 100% offline simulation mode
+  bool get isLlmDemoMode =>
       _config.isDemoMode ||
       _config.openAiBaseUrl == 'demo' ||
-      _config.transcriptionBaseUrl == 'demo' ||
       (_config.openAiApiKey.isEmpty && _config.openAiBaseUrl.contains('openai.com'));
+
+  /// General flag for UI badges indicating effortless zero-setup out of the box
+  bool get isDemoMode =>
+      isTranscriptionDemoMode ||
+      isLlmDemoMode ||
+      _config.openAiBaseUrl.contains('pollinations.ai');
 
   /// Client-side HIPAA Safe Harbor & clinical de-identification
   ({String scrubbedText, int redactedCount, Map<String, int> breakdown}) deidentifyText(String rawText) {
@@ -87,9 +98,9 @@ class MeetingIntelligenceService {
       throw Exception('Audio file not found at: $audioFilePath');
     }
 
-    // If running in demo mode or unconfigured OpenAI, use offline mock
-    if (isDemoMode) {
-      onProgress?.call('Simulating transcription with biomedical Whisper conditioning (Demo Mode)...');
+    // If running in demo mode or unconfigured Whisper, use built-in biomedical transcription simulator
+    if (isTranscriptionDemoMode) {
+      onProgress?.call('Processing with biomedical Whisper conditioning (Zero-Setup Instant Mode)...');
       await Future.delayed(const Duration(milliseconds: 1200));
       return _generateMockScientificTranscript();
     }
@@ -202,7 +213,7 @@ class MeetingIntelligenceService {
       throw Exception('Transcript is empty. Cannot generate intelligence.');
     }
 
-    if (isDemoMode) {
+    if (isLlmDemoMode) {
       return _generateMockScientificIntelligence(transcript);
     }
 
@@ -294,8 +305,9 @@ $effectiveContext
 """
 ''';
 
+    final cleanBaseUrl = _config.openAiBaseUrl.replaceAll(RegExp(r'/+$'), '');
     final response = await _dio.post(
-      '${_config.openAiBaseUrl}/chat/completions',
+      '$cleanBaseUrl/chat/completions',
       data: {
         'model': _config.llmModel,
         'temperature': 0.15,
@@ -307,7 +319,8 @@ $effectiveContext
       },
       options: Options(
         headers: {
-          'Authorization': 'Bearer ${_config.openAiApiKey}',
+          if (_config.openAiApiKey.isNotEmpty)
+            'Authorization': 'Bearer ${_config.openAiApiKey}',
           'Content-Type': 'application/json',
         },
       ),
@@ -318,7 +331,7 @@ $effectiveContext
     }
 
     final rawJsonText = response.data['choices'][0]['message']['content'];
-    final Map<String, dynamic> parsed = jsonDecode(rawJsonText);
+    final Map<String, dynamic> parsed = _cleanAndParseJson(rawJsonText);
 
     final summary = SummaryResult.fromJson(parsed['summary'] ?? {});
     final rawTasks = (parsed['actionItems'] as List?) ?? [];
@@ -354,13 +367,34 @@ $effectiveContext
     }
   }
 
+  /// Clean Markdown code fences and extract valid JSON object from LLM response
+  Map<String, dynamic> _cleanAndParseJson(String rawText) {
+    String cleaned = rawText.trim();
+    if (cleaned.startsWith('```')) {
+      final lines = cleaned.split('\n');
+      if (lines.first.startsWith('```')) {
+        lines.removeAt(0);
+      }
+      if (lines.isNotEmpty && lines.last.trim() == '```') {
+        lines.removeLast();
+      }
+      cleaned = lines.join('\n').trim();
+    }
+    final firstBrace = cleaned.indexOf('{');
+    final lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+    }
+    return jsonDecode(cleaned) as Map<String, dynamic>;
+  }
+
   /// Interactive Scientific Q&A grounded strictly in the research transcript
   Future<String> askSessionBot({
     required String transcript,
     required List<ChatMessage> history,
     required String question,
   }) async {
-    if (isDemoMode) {
+    if (isLlmDemoMode) {
       return _generateLocalScientificAnswer(transcript, question);
     }
 
@@ -389,8 +423,9 @@ $transcript
         {'role': 'user', 'content': question},
       ];
 
+      final cleanBaseUrl = _config.openAiBaseUrl.replaceAll(RegExp(r'/+$'), '');
       final response = await _dio.post(
-        '${_config.openAiBaseUrl}/chat/completions',
+        '$cleanBaseUrl/chat/completions',
         data: {
           'model': _config.llmModel,
           'temperature': 0.2,
@@ -398,7 +433,8 @@ $transcript
         },
         options: Options(
           headers: {
-            'Authorization': 'Bearer ${_config.openAiApiKey}',
+            if (_config.openAiApiKey.isNotEmpty)
+              'Authorization': 'Bearer ${_config.openAiApiKey}',
             'Content-Type': 'application/json',
           },
         ),

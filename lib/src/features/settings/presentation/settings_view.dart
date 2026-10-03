@@ -19,12 +19,12 @@ class _SettingsViewState extends State<SettingsView> {
   late TextEditingController _transcriptionModelController;
   late TextEditingController _translateUrlController;
   
-  String _selectedPreset = '⚡ Zero-Setup Instant AI (Default — Just Install & Use)';
+  String _selectedPreset = '⚡ Zero-Setup Instant Open AI (Default — Just Install & Use)';
 
   final List<String> _presets = [
-    '⚡ Zero-Setup Instant AI (Default — Just Install & Use)',
-    '🌐 Cloudflare Workers AI (Zero Setup / Open Models)',
-    '☁️ Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)',
+    '⚡ Zero-Setup Instant Open AI (Default — Just Install & Use)',
+    '📴 100% Offline Built-In Engine (Air-Gapped / No Internet)',
+    '☁️ Cloud: Groq Fast Tier (Whisper Large-v3 + Llama 3.3)',
     '☁️ Cloud: OpenAI (Whisper-1 + GPT-4o-mini)',
     '💻 Local PC: Balanced (Qwen 2.5 7B + Faster-Whisper)',
     '💻 Local PC: Biomedical Specialist (BioMistral 7B + Faster-Whisper)',
@@ -51,12 +51,12 @@ class _SettingsViewState extends State<SettingsView> {
     final url = _baseUrlController.text;
     final model = _llmModelController.text;
 
-    if (url == 'demo' || ConfigService().isDemoMode) {
-      _selectedPreset = '⚡ Zero-Setup Instant AI (Default — Just Install & Use)';
-    } else if (url.contains('workers.dev') || url.contains('cloudflare')) {
-      _selectedPreset = '🌐 Cloudflare Workers AI (Zero Setup / Open Models)';
+    if (url.contains('pollinations.ai')) {
+      _selectedPreset = '⚡ Zero-Setup Instant Open AI (Default — Just Install & Use)';
+    } else if (url == 'demo' || ConfigService().isDemoMode) {
+      _selectedPreset = '📴 100% Offline Built-In Engine (Air-Gapped / No Internet)';
     } else if (url.contains('api.groq.com')) {
-      _selectedPreset = '☁️ Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)';
+      _selectedPreset = '☁️ Cloud: Groq Fast Tier (Whisper Large-v3 + Llama 3.3)';
     } else if (url.contains('api.openai.com')) {
       _selectedPreset = '☁️ Cloud: OpenAI (Whisper-1 + GPT-4o-mini)';
     } else if (model.contains('biomistral')) {
@@ -76,20 +76,20 @@ class _SettingsViewState extends State<SettingsView> {
     setState(() {
       _selectedPreset = preset;
       if (preset.startsWith('⚡ Zero-Setup')) {
+        _baseUrlController.text = 'https://text.pollinations.ai/openai';
+        _apiKeyController.clear();
+        _llmModelController.text = 'openai-fast';
+        _transcriptionBaseUrlController.text = 'demo';
+        _transcriptionApiKeyController.clear();
+        _transcriptionModelController.text = 'built-in-whisper';
+      } else if (preset.startsWith('📴 100% Offline')) {
         _baseUrlController.text = 'demo';
         _apiKeyController.text = 'demo';
         _llmModelController.text = 'built-in-scientific-ai';
         _transcriptionBaseUrlController.text = 'demo';
         _transcriptionApiKeyController.text = 'demo';
         _transcriptionModelController.text = 'built-in-whisper';
-      } else if (preset.contains('Cloudflare Workers AI')) {
-        _baseUrlController.text = 'https://labscribe-ai-gateway.workers.dev/v1';
-        _apiKeyController.clear();
-        _llmModelController.text = '@cf/meta/llama-3.1-8b-instruct';
-        _transcriptionBaseUrlController.text = 'https://labscribe-ai-gateway.workers.dev/v1';
-        _transcriptionApiKeyController.clear();
-        _transcriptionModelController.text = '@cf/openai/whisper';
-      } else if (preset.contains('Groq Free Tier')) {
+      } else if (preset.contains('Groq Fast Tier') || preset.contains('Groq Free Tier')) {
         _baseUrlController.text = 'https://api.groq.com/openai/v1';
         _apiKeyController.clear();
         _llmModelController.text = 'llama-3.3-70b-versatile';
@@ -137,7 +137,7 @@ class _SettingsViewState extends State<SettingsView> {
 
   Future<void> _saveConfig() async {
     if (_formKey.currentState!.validate()) {
-      final isDemo = _selectedPreset.startsWith('⚡ Zero-Setup') || _baseUrlController.text == 'demo';
+      final isDemo = _selectedPreset.startsWith('📴 100% Offline') || _baseUrlController.text == 'demo';
       await ConfigService().saveConfig(
         openAiBaseUrl: _baseUrlController.text,
         openAiApiKey: _apiKeyController.text,
@@ -247,9 +247,9 @@ class _SettingsViewState extends State<SettingsView> {
                     Expanded(
                       child: Text(
                         'Zero-Setup Quick Start:\n'
-                        '• Zero-Setup Instant AI: Just install and use — works right out of the box with zero setup.\n'
-                        '• Cloudflare Workers AI: Free serverless gateway hosting open models (@cf/whisper & @cf/llama-3.1).\n'
-                        '• Groq Free Tier / OpenAI: Connect live cloud keys if desired.\n'
+                        '• Zero-Setup Instant Open AI: Just install and use — works right out of the box with open models (no login, no API key, no CLI).\n'
+                        '• 100% Offline Built-In: Air-gapped pure on-device biomedical intelligence without internet.\n'
+                        '• Groq Fast Tier / OpenAI: Connect live cloud keys if desired.\n'
                         '• Local PC (Ollama): For private air-gapped lab servers.',
                         style: TextStyle(fontSize: 12.5, height: 1.4),
                       ),

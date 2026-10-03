@@ -8,25 +8,25 @@ class ConfigService {
 
   late SharedPreferences _prefs;
 
-  String openAiBaseUrl = 'demo';
-  String openAiApiKey = 'demo';
-  String llmModel = 'built-in-scientific-ai';
+  String openAiBaseUrl = 'https://text.pollinations.ai/openai';
+  String openAiApiKey = 'zero-setup';
+  String llmModel = 'openai-fast';
   String transcriptionBaseUrl = 'demo';
   String transcriptionApiKey = 'demo';
   String transcriptionModel = 'built-in-whisper';
   String libreTranslateBaseUrl = 'http://localhost:5000';
-  bool isDemoMode = true;
+  bool isDemoMode = false;
 
   Future<void> loadConfig() async {
     _prefs = await SharedPreferences.getInstance();
-    openAiBaseUrl = _prefs.getString('openAiBaseUrl') ?? 'demo';
-    openAiApiKey = _prefs.getString('openAiApiKey') ?? 'demo';
-    llmModel = _prefs.getString('llmModel') ?? 'built-in-scientific-ai';
-    transcriptionBaseUrl = _prefs.getString('transcriptionBaseUrl') ?? openAiBaseUrl;
-    transcriptionApiKey = _prefs.getString('transcriptionApiKey') ?? openAiApiKey;
+    openAiBaseUrl = _prefs.getString('openAiBaseUrl') ?? 'https://text.pollinations.ai/openai';
+    openAiApiKey = _prefs.getString('openAiApiKey') ?? 'zero-setup';
+    llmModel = _prefs.getString('llmModel') ?? 'openai-fast';
+    transcriptionBaseUrl = _prefs.getString('transcriptionBaseUrl') ?? 'demo';
+    transcriptionApiKey = _prefs.getString('transcriptionApiKey') ?? 'demo';
     transcriptionModel = _prefs.getString('transcriptionModel') ?? 'built-in-whisper';
     libreTranslateBaseUrl = _prefs.getString('libreTranslateBaseUrl') ?? 'http://localhost:5000';
-    isDemoMode = _prefs.getBool('isDemoMode') ?? (openAiBaseUrl == 'demo' || transcriptionBaseUrl == 'demo');
+    isDemoMode = _prefs.getBool('isDemoMode') ?? false;
   }
 
   Future<void> saveConfig({
@@ -66,7 +66,7 @@ class ConfigService {
       transcriptionApiKey: transcriptionApiKey,
       transcriptionModel: transcriptionModel,
       llmModel: llmModel,
-      isDemoMode: isDemoMode || openAiBaseUrl == 'demo' || transcriptionBaseUrl == 'demo',
+      isDemoMode: isDemoMode || openAiBaseUrl == 'demo',
     );
   }
 }
