@@ -1,0 +1,13 @@
+{
+  "name": "labscribe-ai-gateway",
+  "version": "1.0.0",
+  "description": "Zero-setup serverless AI gateway for LabScribe AI",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}

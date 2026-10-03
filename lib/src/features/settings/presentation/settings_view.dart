@@ -23,6 +23,7 @@ class _SettingsViewState extends State<SettingsView> {
 
   final List<String> _presets = [
     '⚡ Zero-Setup Instant AI (Default — Just Install & Use)',
+    '🌐 Cloudflare Workers AI (Zero Setup / Open Models)',
     '☁️ Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)',
     '☁️ Cloud: OpenAI (Whisper-1 + GPT-4o-mini)',
     '💻 Local PC: Balanced (Qwen 2.5 7B + Faster-Whisper)',
@@ -52,6 +53,8 @@ class _SettingsViewState extends State<SettingsView> {
 
     if (url == 'demo' || ConfigService().isDemoMode) {
       _selectedPreset = '⚡ Zero-Setup Instant AI (Default — Just Install & Use)';
+    } else if (url.contains('workers.dev') || url.contains('cloudflare')) {
+      _selectedPreset = '🌐 Cloudflare Workers AI (Zero Setup / Open Models)';
     } else if (url.contains('api.groq.com')) {
       _selectedPreset = '☁️ Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)';
     } else if (url.contains('api.openai.com')) {
@@ -79,6 +82,13 @@ class _SettingsViewState extends State<SettingsView> {
         _transcriptionBaseUrlController.text = 'demo';
         _transcriptionApiKeyController.text = 'demo';
         _transcriptionModelController.text = 'built-in-whisper';
+      } else if (preset.contains('Cloudflare Workers AI')) {
+        _baseUrlController.text = 'https://labscribe-ai-gateway.workers.dev/v1';
+        _apiKeyController.clear();
+        _llmModelController.text = '@cf/meta/llama-3.1-8b-instruct';
+        _transcriptionBaseUrlController.text = 'https://labscribe-ai-gateway.workers.dev/v1';
+        _transcriptionApiKeyController.clear();
+        _transcriptionModelController.text = '@cf/openai/whisper';
       } else if (preset.contains('Groq Free Tier')) {
         _baseUrlController.text = 'https://api.groq.com/openai/v1';
         _apiKeyController.clear();
@@ -236,10 +246,11 @@ class _SettingsViewState extends State<SettingsView> {
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Zero-CLI Quick Start:\n'
-                        '• Offline Demo Mode: Test all scientific features right now with zero servers or API keys.\n'
-                        '• Free Cloud (Groq): Paste your free key from console.groq.com for instant cloud STT + LLM.\n'
-                        '• Private Local AI: Start Ollama (ollama serve) and Whisper server (port 8000).',
+                        'Zero-Setup Quick Start:\n'
+                        '• Zero-Setup Instant AI: Just install and use — works right out of the box with zero setup.\n'
+                        '• Cloudflare Workers AI: Free serverless gateway hosting open models (@cf/whisper & @cf/llama-3.1).\n'
+                        '• Groq Free Tier / OpenAI: Connect live cloud keys if desired.\n'
+                        '• Local PC (Ollama): For private air-gapped lab servers.',
                         style: TextStyle(fontSize: 12.5, height: 1.4),
                       ),
                     ),

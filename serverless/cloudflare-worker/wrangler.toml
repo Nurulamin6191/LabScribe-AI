@@ -1,0 +1,10 @@
+name = "labscribe-ai-gateway"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+# Enables Cloudflare Workers AI native hardware bindings
+[ai]
+binding = "AI"
+
+[vars]
+LLM_MODEL = "@cf/meta/llama-3.1-8b-instruct"
