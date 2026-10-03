@@ -1,7 +1,7 @@
 name: labscribe
 description: "Industrial-grade meeting recorder and AI assistant with audio capture, Whisper transcription, and executive intelligence"
 publish_to: "none"
-version: 1.3.1+5
+version: 1.3.2+6
 
 environment:
   sdk: ">=3.2.0 <4.0.0"

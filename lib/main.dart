@@ -93,28 +93,84 @@ class LabScribeApp extends StatelessWidget {
             borderSide: const BorderSide(color: Color(0xFF4F46E5), width: 1.5),
           ),
         ),
+        tabBarTheme: const TabBarThemeData(
+          dividerColor: Color(0xFFE2E8F0),
+          indicatorColor: Color(0xFF4F46E5),
+          indicatorSize: TabBarIndicatorSize.tab,
+          labelColor: Color(0xFF4F46E5),
+          unselectedLabelColor: Color(0xFF64748B),
+          labelStyle: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+        ),
+        dividerTheme: const DividerThemeData(
+          color: Color(0xFFE2E8F0),
+          thickness: 1,
+          space: 1,
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            side: const BorderSide(color: Color(0xFFE2E8F0)),
+            textStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+          ),
+        ),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF090D16),
+        scaffoldBackgroundColor: const Color(0xFF0B0F17),
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF6366F1),
           brightness: Brightness.dark,
-          surface: const Color(0xFF0F172A),
+          surface: const Color(0xFF111827),
           onSurface: const Color(0xFFF8FAFC),
           primary: const Color(0xFF6366F1),
           outlineVariant: const Color(0xFF1E293B),
         ),
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0F172A),
+          backgroundColor: Color(0xFF111827),
           foregroundColor: Color(0xFFF8FAFC),
           elevation: 0,
           scrolledUnderElevation: 0,
           surfaceTintColor: Colors.transparent,
         ),
+        tabBarTheme: const TabBarThemeData(
+          dividerColor: Color(0xFF1E293B),
+          indicatorColor: Color(0xFF6366F1),
+          indicatorSize: TabBarIndicatorSize.tab,
+          labelColor: Color(0xFF6366F1),
+          unselectedLabelColor: Color(0xFF94A3B8),
+          labelStyle: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+        ),
+        dividerTheme: const DividerThemeData(
+          color: Color(0xFF1E293B),
+          thickness: 1,
+          space: 1,
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            side: const BorderSide(color: Color(0xFF1E293B)),
+            textStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+          ),
+        ),
         cardTheme: CardThemeData(
-          color: const Color(0xFF0F172A),
+          color: const Color(0xFF111827),
           elevation: 0,
           margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
@@ -124,7 +180,7 @@ class LabScribeApp extends StatelessWidget {
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: const Color(0xFF0B101E),
+          fillColor: const Color(0xFF0F172A),
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),

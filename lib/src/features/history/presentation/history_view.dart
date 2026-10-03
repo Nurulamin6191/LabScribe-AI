@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/session_repository.dart';
 import '../../../models/meeting_session.dart';
 
-/// Historical session browser with real-time scientific search,
-/// metadata badges (HIPAA, 21 CFR Part 11 cryptographic seal, citations),
-/// and swipe-to-delete.
+/// Historical session browser with fast text search and meeting intelligence badges.
 class HistoryView extends StatefulWidget {
   const HistoryView({super.key});
 
@@ -49,10 +47,10 @@ class _HistoryViewState extends State<HistoryView> {
       } else {
         _filteredSessions = _allSessions.where((s) {
           final titleMatch = s.title.toLowerCase().contains(query);
-          final hypothesisMatch = s.summary?.scientificHypothesis.toLowerCase().contains(query) ?? false;
+          final summaryMatch = s.summary?.executiveSummary.toLowerCase().contains(query) ?? false;
           final transcriptMatch = s.transcript.toLowerCase().contains(query);
           final dateMatch = s.createdAt.toLocal().toString().toLowerCase().contains(query);
-          return titleMatch || hypothesisMatch || transcriptMatch || dateMatch;
+          return titleMatch || summaryMatch || transcriptMatch || dateMatch;
         }).toList();
       }
     });
@@ -75,7 +73,7 @@ class _HistoryViewState extends State<HistoryView> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Scientific Session Archive'),
+        title: const Text('Meeting History & Archive'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(60),
           child: Padding(
@@ -83,7 +81,7 @@ class _HistoryViewState extends State<HistoryView> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Search by title, hypothesis, gene, or date...',
+                hintText: 'Search by title, summary, transcript, or date...',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
@@ -92,11 +90,11 @@ class _HistoryViewState extends State<HistoryView> {
                       )
                     : null,
                 filled: true,
-                fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.5),
+                fillColor: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
                 isDense: true,
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
                 ),
               ),
             ),
@@ -110,13 +108,13 @@ class _HistoryViewState extends State<HistoryView> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.archive_outlined, size: 48, color: Colors.grey),
+                      Icon(Icons.archive_outlined, size: 48, color: theme.colorScheme.outline),
                       const SizedBox(height: 12),
                       Text(
                         _searchController.text.isNotEmpty
-                            ? 'No sessions matching "${_searchController.text}".'
-                            : 'No saved scientific sessions in local archive.',
-                        style: const TextStyle(color: Colors.grey),
+                            ? 'No meetings matching "${_searchController.text}".'
+                            : 'No saved meeting recordings in local archive.',
+                        style: TextStyle(color: theme.colorScheme.outline),
                       ),
                     ],
                   ),
@@ -186,13 +184,13 @@ class _HistoryViewState extends State<HistoryView> {
                                   ],
                                 ),
                                 const SizedBox(height: 6),
-                                if (session.summary?.scientificHypothesis.isNotEmpty == true) ...[
+                                if (session.summary?.executiveSummary.isNotEmpty == true) ...[
                                   Text(
-                                    'Hypothesis: ${session.summary!.scientificHypothesis}',
+                                    session.summary!.executiveSummary,
                                     style: TextStyle(
                                       fontSize: 12,
-                                      fontStyle: FontStyle.italic,
-                                      color: Colors.grey[700],
+                                      height: 1.4,
+                                      color: theme.colorScheme.onSurfaceVariant,
                                     ),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
@@ -206,14 +204,28 @@ class _HistoryViewState extends State<HistoryView> {
                                       style: TextStyle(fontSize: 11, color: theme.colorScheme.outline),
                                     ),
                                     const Spacer(),
+                                    if (session.actionItems.isNotEmpty) ...[
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: theme.colorScheme.primary.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          '${session.actionItems.length} Tasks',
+                                          style: TextStyle(fontSize: 10, color: theme.colorScheme.primary, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                    ],
                                     if (session.isDeIdentified) ...[
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: Colors.teal.withOpacity(0.12),
+                                          color: const Color(0xFF10B981).withOpacity(0.12),
                                           borderRadius: BorderRadius.circular(4),
                                         ),
-                                        child: const Text('HIPAA', style: TextStyle(fontSize: 10, color: Colors.teal, fontWeight: FontWeight.bold)),
+                                        child: const Text('Redacted', style: TextStyle(fontSize: 10, color: Color(0xFF10B981), fontWeight: FontWeight.bold)),
                                       ),
                                       const SizedBox(width: 6),
                                     ],
@@ -221,28 +233,17 @@ class _HistoryViewState extends State<HistoryView> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: Colors.indigo.withOpacity(0.12),
+                                          color: theme.colorScheme.surfaceContainerHighest,
                                           borderRadius: BorderRadius.circular(4),
                                         ),
-                                        child: const Row(
+                                        child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Icon(Icons.verified, size: 10, color: Colors.indigo),
-                                            SizedBox(width: 2),
-                                            Text('21 CFR 11', style: TextStyle(fontSize: 10, color: Colors.indigo, fontWeight: FontWeight.bold)),
+                                            Icon(Icons.verified, size: 10, color: theme.colorScheme.primary),
+                                            const SizedBox(width: 2),
+                                            Text('Verified', style: TextStyle(fontSize: 10, color: theme.colorScheme.primary, fontWeight: FontWeight.bold)),
                                           ],
                                         ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                    ],
-                                    if (session.citations.isNotEmpty) ...[
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.blue.withOpacity(0.12),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text('${session.citations.length} Citations', style: const TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold)),
                                       ),
                                     ],
                                   ],

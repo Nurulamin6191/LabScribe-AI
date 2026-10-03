@@ -20,9 +20,9 @@ import '../../../models/meeting_session.dart';
 import '../../intelligence/services/meeting_intelligence_service.dart';
 import '../../public_apis/services/public_api_service.dart';
 
-/// Main interactive UI managing session recording, audio device selection,
-/// meeting-compatible compact mode, clinical de-identification, in-app literature/figure reading,
-/// 21 CFR Part 11 cryptographic verification, and responsive scientific intelligence dashboards.
+/// Enterprise-grade meeting recorder and intelligence dashboard managing audio capture,
+/// real-time transcription, speaker diarization, Hindi/Hinglish multilingual processing,
+/// and automated executive summaries & deliverables.
 class RecorderView extends StatefulWidget {
   final MeetingIntelligenceService intelligenceService;
   final PublicApiService publicApiService;
@@ -432,7 +432,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         });
 
         await SessionRepository().saveSession(newSession);
-        _showSnackBar('Imported $fileName with 21 CFR Part 11 cryptographic seal.');
+        _showSnackBar('Imported $fileName successfully.');
       }
     } catch (e) {
       _showSnackBar('Error importing audio file: $e');
@@ -862,12 +862,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         meetingDomain: _selectedMeetingDomain,
       );
 
-      // 4. Compute 21 CFR Part 11 cryptographic transcript hash
+      // 4. Compute cryptographic integrity hash
       final transcriptHash = CryptoUtils.sha256String(transcript);
 
       setState(() {
         _processingStage = ProcessingStage.completed;
-        _statusMessage = 'AI Meeting Intelligence Generated & Sealed!';
+        _statusMessage = 'Meeting intelligence synthesized successfully.';
         _currentSession?.summary = intelligence.summary;
         _currentSession?.actionItems = intelligence.actionItems;
         _currentSession?.speakerTurns = intelligence.speakerTurns;
@@ -878,7 +878,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         await SessionRepository().saveSession(_currentSession!);
       }
 
-      _showSnackBar('Meeting Analysis & Action Items ready (21 CFR Part 11 sealed).');
+      _showSnackBar('Meeting summary, key points, and action items generated!');
     } catch (e) {
       setState(() {
         _processingStage = ProcessingStage.error;
@@ -1119,7 +1119,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       });
 
       await SessionRepository().saveSession(_currentSession!);
-      _showSnackBar('Analysis complete from meeting text (21 CFR Part 11 sealed).');
+      _showSnackBar('Analysis complete: Meeting insights and action items ready.');
     } catch (e) {
       setState(() {
         _processingStage = ProcessingStage.error;
@@ -1180,13 +1180,13 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               },
             ),
             ListTile(
-              leading: const Icon(Icons.article, color: Colors.deepPurple),
-              title: const Text('Save as Lab Markdown (.md)'),
-              subtitle: const Text('Formatted lab record with 21 CFR Part 11 cryptographic seal'),
+              leading: Icon(Icons.article_outlined, color: Theme.of(context).colorScheme.primary),
+              title: const Text('Save as Meeting Minutes (.md)'),
+              subtitle: const Text('Structured Markdown document with executive summary and tasks'),
               onTap: () async {
                 Navigator.pop(ctx);
                 await ExportService().exportSessionAsMarkdown(_currentSession!);
-                _showSnackBar('Exported as scientific Markdown (.md)!');
+                _showSnackBar('Exported meeting minutes as Markdown (.md)!');
               },
             ),
             ListTile(
@@ -1223,7 +1223,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       _currentSession = MeetingSession(
         id: timestamp.toString(),
-        title: _titleController.text.trim().isEmpty ? 'Scientific Session' : _titleController.text.trim(),
+        title: _titleController.text.trim().isEmpty ? 'Meeting Session' : _titleController.text.trim(),
         createdAt: DateTime.now(),
         audioPath: _recordedAudioPath ?? '',
         durationSeconds: _recordDurationSeconds,
@@ -1238,7 +1238,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _showTranslatedTranscript = false;
     });
     await SessionRepository().saveSession(_currentSession!);
-    _showSnackBar('Transcript updated and 21 CFR Part 11 re-sealed!');
+    _showSnackBar('Transcript updated successfully.');
   }
 
   Future<void> _toggleTranslateTranscript() async {
@@ -1298,7 +1298,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                'Paste meeting notes, a scientific lecture transcript, or lab discussion text below to run the AI intelligence pipeline directly:',
+                'Paste meeting notes, discussion transcripts, or team sync text below to run the AI analysis pipeline directly:',
                 style: TextStyle(fontSize: 12.5, color: Colors.grey),
               ),
               const SizedBox(height: 12),
@@ -1306,7 +1306,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 controller: pasteController,
                 maxLines: 8,
                 decoration: const InputDecoration(
-                  hintText: 'e.g. Dr. Chen: Today we tested Cisplatin on H23 cell line...',
+                  hintText: 'e.g. Alex: Let\'s review our product sprint deliverables and API infrastructure roadmap...',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -1487,7 +1487,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               const SizedBox(height: 8),
               const Text(
                 '1. Free Cloud (Zero CLI): Select "Cloud: Groq Free Tier" in Settings and paste a free key from console.groq.com.\n'
-                '2. Offline Demo Mode: Test all scientific features right now with simulated data (no setup needed).\n'
+                '2. Offline Demo Mode: Test all meeting intelligence features right now with simulated data (no setup needed).\n'
                 '3. Local Server: Start Ollama (ollama serve) and Whisper on port 8000 on your machine.',
                 style: TextStyle(fontSize: 12.5, height: 1.4),
               ),
@@ -1507,7 +1507,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               await ConfigService().saveConfig(
                 openAiBaseUrl: 'demo',
                 openAiApiKey: 'demo',
-                llmModel: 'demo-scientific-ai',
+                llmModel: 'demo-meeting-ai',
                 transcriptionBaseUrl: 'demo',
                 transcriptionApiKey: 'demo',
                 transcriptionModel: 'demo-whisper',
@@ -1621,13 +1621,13 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           builder: (ctx) => AlertDialog(
             title: const Row(
               children: [
-                Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+                Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
                 SizedBox(width: 10),
-                Text('Active Recording in Progress'),
+                Text('Recording in Progress'),
               ],
             ),
             content: const Text(
-              'A scientific session is currently being recorded.\n\nAre you sure you want to stop the recording and exit?',
+              'A meeting recording is currently active.\n\nAre you sure you want to stop the recording and exit?',
             ),
             actions: [
               TextButton(
@@ -2162,14 +2162,14 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   Widget _buildRecordingControlPanel(ThemeData theme) {
     return Container(
       color: theme.colorScheme.surface,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Meeting Title Field
           TextField(
             controller: _titleController,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
             decoration: InputDecoration(
               labelText: 'Meeting Title',
               hintText: 'e.g. Weekly Product Sync & Roadmap',
@@ -2177,146 +2177,115 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               isDense: true,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          // Compact Configuration Panel (Domain, Language, Microphone, Quality)
+          // Streamlined Settings Card: Domain & Language
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.35),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.6)),
+              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
             ),
             child: Column(
               children: [
                 Row(
                   children: [
-                    // Domain Dropdown
+                    Icon(Icons.business_center_outlined, size: 14, color: theme.colorScheme.outline),
+                    const SizedBox(width: 6),
                     Expanded(
-                      child: Row(
-                        children: [
-                          Icon(Icons.business_center_outlined, size: 15, color: theme.colorScheme.primary),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: _selectedMeetingDomain,
-                                isDense: true,
-                                isExpanded: true,
-                                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5, color: theme.colorScheme.onSurface),
-                                items: _domainOptions.map((domain) {
-                                  return DropdownMenuItem(value: domain, child: Text(domain, overflow: TextOverflow.ellipsis));
-                                }).toList(),
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    setState(() => _selectedMeetingDomain = val);
-                                  }
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _selectedMeetingDomain,
+                          isDense: true,
+                          isExpanded: true,
+                          style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5, color: theme.colorScheme.onSurface),
+                          items: _domainOptions.map((domain) {
+                            return DropdownMenuItem(value: domain, child: Text(domain, overflow: TextOverflow.ellipsis));
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _selectedMeetingDomain = val);
+                            }
+                          },
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    // Language Dropdown
+                    Icon(Icons.language, size: 14, color: theme.colorScheme.outline),
+                    const SizedBox(width: 6),
                     Expanded(
-                      child: Row(
-                        children: [
-                          const Icon(Icons.language, size: 15, color: Colors.blueAccent),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: _selectedLanguage,
-                                isDense: true,
-                                isExpanded: true,
-                                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5, color: theme.colorScheme.onSurface),
-                                items: const [
-                                  DropdownMenuItem(value: 'auto', child: Text('🌐 Auto')),
-                                  DropdownMenuItem(value: 'en', child: Text('🇬🇧 English')),
-                                  DropdownMenuItem(value: 'hi', child: Text('🇮🇳 हिन्दी')),
-                                  DropdownMenuItem(value: 'hinglish', child: Text('🇮🇳 Hinglish')),
-                                ],
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    setState(() => _selectedLanguage = val);
-                                  }
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _selectedLanguage,
+                          isDense: true,
+                          isExpanded: true,
+                          style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5, color: theme.colorScheme.onSurface),
+                          items: const [
+                            DropdownMenuItem(value: 'auto', child: Text('🌐 Auto')),
+                            DropdownMenuItem(value: 'en', child: Text('🇬🇧 English')),
+                            DropdownMenuItem(value: 'hi', child: Text('🇮🇳 हिन्दी')),
+                            DropdownMenuItem(value: 'hinglish', child: Text('🇮🇳 Hinglish')),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _selectedLanguage = val);
+                            }
+                          },
+                        ),
                       ),
                     ),
                   ],
                 ),
-                Divider(height: 14, thickness: 0.7, color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+                Divider(height: 12, thickness: 0.5, color: theme.colorScheme.outlineVariant),
                 Row(
                   children: [
-                    // Microphone Selector
+                    Icon(Icons.mic_none, size: 14, color: theme.colorScheme.outline),
+                    const SizedBox(width: 6),
                     Expanded(
-                      child: Row(
-                        children: [
-                          Icon(Icons.mic_none, size: 15, color: theme.colorScheme.primary),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: _audioInputDevices.isEmpty
-                                ? const Text('Default Mic', style: TextStyle(fontSize: 11.5), overflow: TextOverflow.ellipsis)
-                                : DropdownButtonHideUnderline(
-                                    child: DropdownButton<String>(
-                                      value: _selectedDeviceId,
-                                      isDense: true,
-                                      isExpanded: true,
-                                      style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5, color: theme.colorScheme.onSurface),
-                                      items: _audioInputDevices.map((dev) {
-                                        return DropdownMenuItem<String>(
-                                          value: dev.id,
-                                          child: Text(dev.label.isNotEmpty ? dev.label : 'Mic (${dev.id})', overflow: TextOverflow.ellipsis),
-                                        );
-                                      }).toList(),
-                                      onChanged: (id) {
-                                        if (id != null) {
-                                          setState(() {
-                                            _selectedDeviceId = id;
-                                            _selectedInputDevice = _audioInputDevices.firstWhere((d) => d.id == id);
-                                          });
-                                        }
-                                      },
-                                    ),
-                                  ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Audio Fidelity
-                    Expanded(
-                      child: Row(
-                        children: [
-                          const Icon(Icons.graphic_eq, size: 15, color: Colors.blueAccent),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: DropdownButtonHideUnderline(
+                      child: _audioInputDevices.isEmpty
+                          ? Text('Default Microphone', style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurface), overflow: TextOverflow.ellipsis)
+                          : DropdownButtonHideUnderline(
                               child: DropdownButton<String>(
-                                value: _audioQuality,
+                                value: _selectedDeviceId,
                                 isDense: true,
                                 isExpanded: true,
-                                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5, color: theme.colorScheme.onSurface),
-                                items: const [
-                                  DropdownMenuItem(value: 'High Fidelity (128 kbps)', child: Text('128 kbps Hi-Fi')),
-                                  DropdownMenuItem(value: 'Studio Voice (256 kbps)', child: Text('256 kbps Studio')),
-                                  DropdownMenuItem(value: 'Compact Voice (64 kbps)', child: Text('64 kbps Voice')),
-                                ],
-                                onChanged: (val) {
-                                  if (val != null) {
-                                    setState(() => _audioQuality = val);
+                                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11, color: theme.colorScheme.onSurface),
+                                items: _audioInputDevices.map((dev) {
+                                  return DropdownMenuItem<String>(
+                                    value: dev.id,
+                                    child: Text(dev.label.isNotEmpty ? dev.label : 'Mic (${dev.id})', overflow: TextOverflow.ellipsis),
+                                  );
+                                }).toList(),
+                                onChanged: (id) {
+                                  if (id != null) {
+                                    setState(() {
+                                      _selectedDeviceId = id;
+                                      _selectedInputDevice = _audioInputDevices.firstWhere((d) => d.id == id);
+                                    });
                                   }
                                 },
                               ),
                             ),
-                          ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(Icons.graphic_eq, size: 14, color: theme.colorScheme.outline),
+                    const SizedBox(width: 6),
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _audioQuality,
+                        isDense: true,
+                        style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11, color: theme.colorScheme.onSurface),
+                        items: const [
+                          DropdownMenuItem(value: 'High Fidelity (128 kbps)', child: Text('128 kbps Hi-Fi')),
+                          DropdownMenuItem(value: 'Studio Voice (256 kbps)', child: Text('256 kbps Studio')),
+                          DropdownMenuItem(value: 'Compact Voice (64 kbps)', child: Text('64 kbps Compact')),
                         ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() => _audioQuality = val);
+                          }
+                        },
                       ),
                     ),
                   ],
@@ -2328,82 +2297,93 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
           // Hero Recording Card
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(16),
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: _recordingState == RecordingState.recording
-                    ? Colors.redAccent.withOpacity(0.6)
+                    ? const Color(0xFFDC2626).withOpacity(0.5)
                     : theme.colorScheme.outlineVariant,
                 width: _recordingState == RecordingState.recording ? 1.5 : 1.0,
               ),
             ),
             child: Column(
               children: [
-                // Digital Stopwatch Timer
+                // Status Badge Row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _recordingState == RecordingState.recording
+                                ? const Color(0xFFDC2626)
+                                : (_recordingState == RecordingState.paused ? const Color(0xFFD97706) : const Color(0xFF059669)),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _recordingState == RecordingState.recording
+                              ? 'RECORDING ACTIVE'
+                              : (_recordingState == RecordingState.paused ? 'PAUSED' : 'READY TO RECORD'),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10.5,
+                            letterSpacing: 0.6,
+                            color: _recordingState == RecordingState.recording
+                                ? const Color(0xFFDC2626)
+                                : (_recordingState == RecordingState.paused ? const Color(0xFFD97706) : theme.colorScheme.outline),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_recordingState == RecordingState.recording)
+                      Text(
+                        '${_currentDecibels.toStringAsFixed(0)} dB',
+                        style: TextStyle(fontSize: 10, fontFamily: 'monospace', color: theme.colorScheme.outline),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // Digital Monospace Timer
                 Text(
                   _formatDuration(_recordDurationSeconds),
                   style: TextStyle(
-                    fontSize: 34,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 2.5,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.5,
                     fontFamily: 'monospace',
-                    color: _recordingState == RecordingState.recording ? Colors.redAccent : theme.colorScheme.onSurface,
+                    color: _recordingState == RecordingState.recording ? const Color(0xFFDC2626) : theme.colorScheme.onSurface,
                   ),
                 ),
-                const SizedBox(height: 6),
-                // Live Status Indicator Dot
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _recordingState == RecordingState.recording
-                            ? Colors.redAccent
-                            : (_recordingState == RecordingState.paused ? Colors.orange : Colors.green),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _recordingState == RecordingState.recording
-                          ? 'RECORDING ACTIVE'
-                          : (_recordingState == RecordingState.paused ? 'RECORDING PAUSED' : 'READY TO RECORD'),
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 10.5,
-                        letterSpacing: 0.8,
-                        color: _recordingState == RecordingState.recording
-                            ? Colors.redAccent
-                            : (_recordingState == RecordingState.paused ? Colors.orange : Colors.grey),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
 
-                // Live 28-Bar Waveform
+                // Waveform Visualizer
                 _buildLiveWaveformVisualizer(theme),
                 const SizedBox(height: 8),
 
-                // Decibel Meter Gauge
+                // Decibel Meter
                 _buildDecibelMeterGauge(theme),
                 const SizedBox(height: 14),
 
-                // Primary Record Buttons
+                // Recording Control Buttons
                 if (_recordingState == RecordingState.idle || _recordingState == RecordingState.stopped) ...[
                   FilledButton.icon(
                     onPressed: _startRecording,
                     icon: const Icon(Icons.fiber_manual_record, color: Colors.white, size: 16),
-                    label: const Text('Record Meeting', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
+                    label: const Text('Record Meeting', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                     style: FilledButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
+                      backgroundColor: const Color(0xFFDC2626),
                       foregroundColor: Colors.white,
                       minimumSize: const Size.fromHeight(42),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -2456,7 +2436,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                           icon: const Icon(Icons.stop, size: 16),
                           label: const Text('Stop & Save'),
                           style: FilledButton.styleFrom(
-                            backgroundColor: Colors.redAccent,
+                            backgroundColor: const Color(0xFFDC2626),
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
@@ -2514,20 +2494,20 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 ? _executeAiPipeline
                 : null,
             icon: const Icon(Icons.auto_awesome, size: 16),
-            label: const Text('Process Meeting Insights', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+            label: const Text('Analyze Meeting Intelligence', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF4F46E5),
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(44),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              minimumSize: const Size.fromHeight(42),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
 
           // Progress Indicator & Status Message
           if (_processingStage != ProcessingStage.idle) ...[
             ClipRRect(
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(2),
               child: LinearProgressIndicator(
                 value: _processingStage == ProcessingStage.completed
                     ? 1.0
@@ -2536,7 +2516,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         : _processingStage == ProcessingStage.deidentifying
                             ? 0.5
                             : 0.8),
-                minHeight: 4,
+                minHeight: 3,
               ),
             ),
             const SizedBox(height: 6),
@@ -2557,42 +2537,31 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Row(
         children: [
-          const Icon(Icons.business_center_outlined, size: 18, color: Colors.blueAccent),
+          Icon(Icons.business_center_outlined, size: 16, color: theme.colorScheme.primary),
           const SizedBox(width: 8),
           const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Meeting Domain', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                Text('Context & vocabulary tuning', style: TextStyle(color: Colors.grey, fontSize: 10)),
-              ],
-            ),
+            child: Text('Domain Context', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5)),
           ),
-          DropdownButton<String>(
-            value: _selectedMeetingDomain,
-            underline: const SizedBox(),
-            isDense: true,
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5, color: theme.colorScheme.onSurface),
-            items: _domainOptions.map((domain) {
-              return DropdownMenuItem(
-                value: domain,
-                child: Text(domain),
-              );
-            }).toList(),
-            onChanged: (val) {
-              if (val != null) {
-                setState(() {
-                  _selectedMeetingDomain = val;
-                });
-                _showSnackBar('Meeting domain tuned to: $val');
-              }
-            },
+          DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedMeetingDomain,
+              isDense: true,
+              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5, color: theme.colorScheme.onSurface),
+              items: _domainOptions.map((domain) {
+                return DropdownMenuItem(value: domain, child: Text(domain));
+              }).toList(),
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() => _selectedMeetingDomain = val);
+                }
+              },
+            ),
           ),
         ],
       ),
@@ -2605,40 +2574,33 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Row(
         children: [
-          const Icon(Icons.tune, size: 18, color: Colors.teal),
+          Icon(Icons.graphic_eq, size: 16, color: theme.colorScheme.primary),
           const SizedBox(width: 8),
           const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Audio Fidelity', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                Text('Bitrate & sample rate', style: TextStyle(color: Colors.grey, fontSize: 10)),
-              ],
-            ),
+            child: Text('Audio Fidelity', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5)),
           ),
-          DropdownButton<String>(
-            value: _audioQuality,
-            underline: const SizedBox(),
-            isDense: true,
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5, color: theme.colorScheme.onSurface),
-            items: const [
-              DropdownMenuItem(value: 'High Fidelity (128 kbps)', child: Text('Standard (128 kbps)')),
-              DropdownMenuItem(value: 'Studio Voice (256 kbps)', child: Text('Studio (256 kbps)')),
-              DropdownMenuItem(value: 'Compact Voice (64 kbps)', child: Text('Compact (64 kbps)')),
-            ],
-            onChanged: (val) {
-              if (val != null) {
-                setState(() {
-                  _audioQuality = val;
-                });
-              }
-            },
+          DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _audioQuality,
+              isDense: true,
+              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 11.5, color: theme.colorScheme.onSurface),
+              items: const [
+                DropdownMenuItem(value: 'High Fidelity (128 kbps)', child: Text('128 kbps')),
+                DropdownMenuItem(value: 'Studio Voice (256 kbps)', child: Text('256 kbps')),
+                DropdownMenuItem(value: 'Compact Voice (64 kbps)', child: Text('64 kbps')),
+              ],
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() => _audioQuality = val);
+                }
+              },
+            ),
           ),
         ],
       ),
@@ -2650,44 +2612,39 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   Widget _buildDecibelMeterGauge(ThemeData theme) {
     final clampedDb = _currentDecibels.clamp(-60.0, 0.0);
     final percent = ((clampedDb + 60.0) / 60.0).clamp(0.0, 1.0);
-    Color meterColor = Colors.green;
-    if (percent > 0.8) {
-      meterColor = Colors.redAccent;
-    } else if (percent > 0.6) {
-      meterColor = Colors.orangeAccent;
+    Color meterColor = const Color(0xFF059669); // Emerald
+    if (percent > 0.85) {
+      meterColor = const Color(0xFFDC2626); // Red
+    } else if (percent > 0.65) {
+      meterColor = const Color(0xFFD97706); // Amber
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.35),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.graphic_eq, size: 16, color: meterColor),
-          const SizedBox(width: 8),
-          Text(
-            _recordingState == RecordingState.recording
-                ? '${_currentDecibels.toStringAsFixed(1)} dB'
-                : 'Muted (-60 dB)',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: meterColor),
+    return Row(
+      children: [
+        Text(
+          _recordingState == RecordingState.recording
+              ? '${_currentDecibels.toStringAsFixed(1)} dBFS'
+              : '-60 dBFS',
+          style: TextStyle(
+            fontSize: 10,
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.w500,
+            color: theme.colorScheme.outline,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: _recordingState == RecordingState.recording ? percent : 0.0,
-                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                valueColor: AlwaysStoppedAnimation<Color>(meterColor),
-                minHeight: 6,
-              ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: LinearProgressIndicator(
+              value: _recordingState == RecordingState.recording ? percent : 0.0,
+              backgroundColor: theme.colorScheme.outlineVariant.withOpacity(0.5),
+              valueColor: AlwaysStoppedAnimation<Color>(meterColor),
+              minHeight: 3,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -2695,35 +2652,31 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   Widget _buildLiveWaveformVisualizer(ThemeData theme) {
     return Container(
-      height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(12),
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: _recordingState == RecordingState.recording
-              ? theme.colorScheme.primary.withOpacity(0.5)
-              : theme.colorScheme.outlineVariant.withOpacity(0.4),
+              ? theme.colorScheme.primary.withOpacity(0.3)
+              : theme.colorScheme.outlineVariant.withOpacity(0.5),
         ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: _liveWaveformBars.map((barValue) {
-          final height = (_recordingState == RecordingState.recording ? barValue * 44.0 : 6.0).clamp(4.0, 48.0);
+          final height = (_recordingState == RecordingState.recording ? barValue * 36.0 : 4.0).clamp(3.0, 40.0);
           return AnimatedContainer(
-            duration: const Duration(milliseconds: 80),
-            width: 5,
+            duration: const Duration(milliseconds: 70),
+            width: 4,
             height: height,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(3),
-              gradient: LinearGradient(
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
-                colors: _recordingState == RecordingState.recording
-                    ? [theme.colorScheme.primary, Colors.tealAccent]
-                    : [Colors.grey.shade400, Colors.grey.shade500],
-              ),
+              borderRadius: BorderRadius.circular(2),
+              color: _recordingState == RecordingState.recording
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outlineVariant,
             ),
           );
         }).toList(),
@@ -2741,59 +2694,38 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     final isVoiceActive = _currentDecibels > -42.0;
 
     return Container(
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.35),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isVoiceActive
-              ? Colors.teal.withOpacity(0.6)
-              : theme.colorScheme.outlineVariant.withOpacity(0.5),
-        ),
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isVoiceActive ? Colors.greenAccent : Colors.orangeAccent,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                isVoiceActive ? 'VOICE ACTIVITY DETECTED' : 'LISTENING (AMBIENT NOISE)',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 10.5,
-                  letterSpacing: 0.5,
-                  color: isVoiceActive ? Colors.teal : Colors.orange[800],
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '${_currentDecibels.toStringAsFixed(1)} dBFS',
-                style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace', fontWeight: FontWeight.bold),
-              ),
-            ],
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isVoiceActive ? const Color(0xFF059669) : theme.colorScheme.outline,
+            ),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              const Icon(Icons.security, size: 14, color: Colors.blueAccent),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'Air-gapped audio stream actively buffering to local storage (${_formatDuration(_recordDurationSeconds)}). High-accuracy transcription will run via Whisper upon stopping.',
-                  style: const TextStyle(fontSize: 11, color: Colors.grey, height: 1.3),
-                ),
-              ),
-            ],
+          const SizedBox(width: 8),
+          Text(
+            isVoiceActive ? 'Voice activity detected' : 'Microphone listening...',
+            style: TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 11,
+              color: isVoiceActive ? const Color(0xFF059669) : theme.colorScheme.outline,
+            ),
+          ),
+          const Spacer(),
+          Icon(Icons.lock_outline, size: 12, color: theme.colorScheme.outline),
+          const SizedBox(width: 4),
+          Text(
+            'Air-Gapped Local Whisper',
+            style: TextStyle(fontSize: 10, color: theme.colorScheme.outline),
           ),
         ],
       ),
@@ -2810,11 +2742,11 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
     return Container(
       margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2822,34 +2754,40 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'AUDIO PLAYBACK & SCRUBBER',
-                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.grey),
+              Text(
+                'AUDIO PLAYBACK',
+                style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: theme.colorScheme.outline),
               ),
-              TextButton(
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                onPressed: _cyclePlaybackSpeed,
-                child: Text(
-                  '${_playbackRate}x Speed',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
+              InkWell(
+                borderRadius: BorderRadius.circular(4),
+                onTap: _cyclePlaybackSpeed,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '${_playbackRate}x',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 10.5, color: theme.colorScheme.onSurface),
+                  ),
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 2),
           Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.replay_10, size: 20),
+                icon: const Icon(Icons.replay_10, size: 18),
                 tooltip: 'Rewind 10s',
+                visualDensity: VisualDensity.compact,
                 onPressed: () => _skipAudio(-10),
               ),
               IconButton(
-                icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 30),
+                icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 28),
                 color: theme.colorScheme.primary,
+                visualDensity: VisualDensity.compact,
                 onPressed: () async {
                   if (_isPlaying) {
                     await _audioPlayer.pause();
@@ -2859,23 +2797,30 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 },
               ),
               IconButton(
-                icon: const Icon(Icons.forward_10, size: 20),
-                tooltip: 'Fast-Forward 10s',
+                icon: const Icon(Icons.forward_10, size: 18),
+                tooltip: 'Forward 10s',
+                visualDensity: VisualDensity.compact,
                 onPressed: () => _skipAudio(10),
               ),
               Expanded(
-                child: Slider(
-                  value: posSec.toDouble().clamp(0.0, durSec.toDouble() > 0 ? durSec.toDouble() : 1.0),
-                  min: 0.0,
-                  max: durSec > 0 ? durSec.toDouble() : 1.0,
-                  onChanged: (val) async {
-                    await _audioPlayer.seek(Duration(seconds: val.toInt()));
-                  },
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                    trackHeight: 3,
+                  ),
+                  child: Slider(
+                    value: posSec.toDouble().clamp(0.0, durSec.toDouble() > 0 ? durSec.toDouble() : 1.0),
+                    min: 0.0,
+                    max: durSec > 0 ? durSec.toDouble() : 1.0,
+                    onChanged: (val) async {
+                      await _audioPlayer.seek(Duration(seconds: val.toInt()));
+                    },
+                  ),
                 ),
               ),
               Text(
                 '${_formatDuration(posSec)} / ${_formatDuration(durSec)}',
-                style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace'),
+                style: TextStyle(fontSize: 10, fontFamily: 'monospace', color: theme.colorScheme.outline),
               ),
             ],
           ),
@@ -2976,12 +2921,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF4F46E5).withOpacity(0.1),
+                            color: theme.colorScheme.primary.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
                             _selectedMeetingDomain,
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF4F46E5)),
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: theme.colorScheme.primary),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -3099,10 +3044,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         margin: const EdgeInsets.only(top: 2),
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4F46E5).withOpacity(0.1),
+                          color: theme.colorScheme.primary.withOpacity(0.1),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.check, size: 12, color: Color(0xFF4F46E5)),
+                        child: Icon(Icons.check, size: 12, color: theme.colorScheme.primary),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -3131,9 +3076,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4F46E5).withOpacity(0.04),
+                  color: theme.colorScheme.primary.withOpacity(0.04),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF4F46E5).withOpacity(0.2)),
+                  border: Border.all(color: theme.colorScheme.primary.withOpacity(0.2)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -3141,12 +3086,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4F46E5).withOpacity(0.15),
+                        color: theme.colorScheme.primary.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
                         'D$idx',
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: Color(0xFF4F46E5)),
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: theme.colorScheme.primary),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -3286,20 +3231,20 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: const Color(0xFF4F46E5).withOpacity(0.04),
+                color: theme.colorScheme.primary.withOpacity(0.04),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF4F46E5).withOpacity(0.2)),
+                border: Border.all(color: theme.colorScheme.primary.withOpacity(0.2)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.gavel, size: 16, color: Color(0xFF4F46E5)),
-                      SizedBox(width: 8),
+                      Icon(Icons.gavel, size: 16, color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
                       Text(
                         'DECISIONS RECORDED',
-                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, letterSpacing: 0.5, color: Color(0xFF4F46E5)),
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, letterSpacing: 0.5, color: theme.colorScheme.primary),
                       ),
                     ],
                   ),
@@ -3315,12 +3260,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF4F46E5).withOpacity(0.15),
+                              color: theme.colorScheme.primary.withOpacity(0.15),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
                               'D$idx',
-                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 10, color: Color(0xFF4F46E5)),
+                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 10, color: theme.colorScheme.primary),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -3351,13 +3296,13 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 color: theme.colorScheme.surface,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(
-                  color: item.isCompleted ? Colors.green.withOpacity(0.3) : theme.colorScheme.outlineVariant,
+                  color: item.isCompleted ? const Color(0xFF10B981).withOpacity(0.3) : theme.colorScheme.outlineVariant,
                 ),
               ),
               child: CheckboxListTile(
                 value: item.isCompleted,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                activeColor: const Color(0xFF4F46E5),
+                activeColor: theme.colorScheme.primary,
                 onChanged: (val) {
                   setState(() {
                     item.isCompleted = val ?? false;
@@ -3385,12 +3330,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4F46E5).withOpacity(0.08),
+                          color: theme.colorScheme.primary.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
                           item.category,
-                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF4F46E5)),
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: theme.colorScheme.primary),
                         ),
                       ),
                       Row(
@@ -3407,9 +3352,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.calendar_today, size: 11, color: Colors.orange),
+                            const Icon(Icons.calendar_today, size: 11, color: Color(0xFFD97706)),
                             const SizedBox(width: 4),
-                            Text(item.deadline!, style: const TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.bold)),
+                            Text(item.deadline!, style: const TextStyle(color: Color(0xFFD97706), fontSize: 11, fontWeight: FontWeight.bold)),
                           ],
                         ),
                       Container(
@@ -3652,7 +3597,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         : const Icon(Icons.translate, size: 15),
                     label: Text(_showTranslatedTranscript ? 'View Original' : 'Translate (हिन्दी)'),
                     style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF4F46E5),
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
@@ -3668,18 +3614,18 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               margin: const EdgeInsets.only(bottom: 16),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFF4F46E5).withOpacity(0.08),
+                color: theme.colorScheme.primary.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF4F46E5).withOpacity(0.2)),
+                border: Border.all(color: theme.colorScheme.primary.withOpacity(0.2)),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.g_translate, color: Color(0xFF4F46E5), size: 18),
+                  Icon(Icons.g_translate, color: theme.colorScheme.primary, size: 18),
                   const SizedBox(width: 10),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'प्रदर्शित: प्रतिलेख का हिन्दी अनुवाद (Viewing Hindi Translation)',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: Color(0xFF4F46E5)),
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: theme.colorScheme.primary),
                     ),
                   ),
                   TextButton(
@@ -3723,7 +3669,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         FilledButton.icon(
                           onPressed: _saveEditedTranscript,
                           icon: const Icon(Icons.check, size: 16),
-                          label: const Text('Save & Re-Seal'),
+                          label: const Text('Save Changes'),
                         ),
                         const SizedBox(width: 8),
                         FilledButton.tonalIcon(
@@ -3872,15 +3818,15 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   // --- Intelligence Tab 4: Speaker Analytics & Diarization ---
 
   Color _getSpeakerColor(String speakerId) {
-    final colors = [
-      Colors.teal,
-      Colors.indigo,
-      Colors.deepOrange,
-      Colors.purple,
-      Colors.green,
-      Colors.blueGrey,
-      Colors.amber.shade800,
-      Colors.deepPurple,
+    const colors = [
+      Color(0xFF4F46E5), // Indigo
+      Color(0xFF0284C7), // Sky Blue
+      Color(0xFF059669), // Emerald
+      Color(0xFFD97706), // Amber
+      Color(0xFF7C3AED), // Violet
+      Color(0xFFE11D48), // Rose
+      Color(0xFF0D9488), // Teal
+      Color(0xFF475569), // Slate
     ];
     final hash = speakerId.hashCode.abs();
     return colors[hash % colors.length];
@@ -3909,11 +3855,11 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.record_voice_over, color: Colors.teal),
-            SizedBox(width: 8),
-            Text('Identify Speaker'),
+            Icon(Icons.record_voice_over, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 8),
+            const Text('Identify Speaker'),
           ],
         ),
         content: Column(
@@ -4099,11 +4045,11 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.pie_chart_outline, size: 18, color: Colors.teal),
-                      SizedBox(width: 8),
-                      Text('TALK-TIME SHARE & SPEAKING PACE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.teal)),
+                      Icon(Icons.pie_chart_outline, size: 18, color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Text('TALK-TIME SHARE & SPEAKING PACE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5, letterSpacing: 0.5, color: theme.colorScheme.primary)),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -4267,7 +4213,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             child: Row(
               children: [
                 ActionChip(
-                  avatar: const Icon(Icons.gavel, size: 14, color: Colors.blueAccent),
+                  avatar: Icon(Icons.gavel, size: 14, color: theme.colorScheme.primary),
                   label: const Text('Summarize Decisions', style: TextStyle(fontSize: 11.5)),
                   onPressed: () {
                     _chatController.text = 'Summarize all key decisions made in this meeting.';
@@ -4276,7 +4222,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 ),
                 const SizedBox(width: 8),
                 ActionChip(
-                  avatar: const Icon(Icons.task_alt, size: 14, color: Colors.green),
+                  avatar: Icon(Icons.task_alt, size: 14, color: theme.colorScheme.primary),
                   label: const Text('List Action Items & Owners', style: TextStyle(fontSize: 11.5)),
                   onPressed: () {
                     _chatController.text = 'List all action items, who owns them, and what the deadlines are.';
@@ -4285,7 +4231,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 ),
                 const SizedBox(width: 8),
                 ActionChip(
-                  avatar: const Icon(Icons.warning_amber, size: 14, color: Colors.orange),
+                  avatar: Icon(Icons.warning_amber, size: 14, color: theme.colorScheme.primary),
                   label: const Text('Main Blockers & Risks', style: TextStyle(fontSize: 11.5)),
                   onPressed: () {
                     _chatController.text = 'What were the key risks or blockers highlighted by the speakers?';
@@ -4294,7 +4240,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 ),
                 const SizedBox(width: 8),
                 ActionChip(
-                  avatar: const Icon(Icons.email_outlined, size: 14, color: Colors.purple),
+                  avatar: Icon(Icons.email_outlined, size: 14, color: theme.colorScheme.primary),
                   label: const Text('Draft Follow-up Email', style: TextStyle(fontSize: 11.5)),
                   onPressed: () {
                     _chatController.text = 'Draft a concise follow-up email summarizing the meeting deliverables.';
@@ -4338,7 +4284,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                               Icon(
                                 isUser ? Icons.person : Icons.smart_toy,
                                 size: 14,
-                                color: isUser ? theme.colorScheme.onPrimary : Colors.teal,
+                                color: isUser ? theme.colorScheme.onPrimary : theme.colorScheme.primary,
                               ),
                               const SizedBox(width: 6),
                               Text(
@@ -4346,7 +4292,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 11,
-                                  color: isUser ? theme.colorScheme.onPrimary : Colors.teal,
+                                  color: isUser ? theme.colorScheme.onPrimary : theme.colorScheme.primary,
                                 ),
                               ),
                             ],
@@ -4402,23 +4348,40 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   );
 }
 
-Widget _buildEmptyState(String message) {
-  return Center(
-    child: Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.meeting_room_outlined, size: 52, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.grey, fontSize: 13, height: 1.4),
+  Widget _buildEmptyState(String message) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.6),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.meeting_room_outlined, size: 26, color: theme.colorScheme.primary),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'No Meeting Data',
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: theme.colorScheme.outline, fontSize: 13, height: 1.45),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

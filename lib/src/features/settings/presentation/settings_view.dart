@@ -82,7 +82,7 @@ class _SettingsViewState extends State<SettingsView> {
       } else if (preset.startsWith('📴 100% Offline')) {
         _baseUrlController.text = 'demo';
         _apiKeyController.text = 'demo';
-        _llmModelController.text = 'built-in-scientific-ai';
+        _llmModelController.text = 'built-in-meeting-ai';
         _transcriptionBaseUrlController.text = 'demo';
         _transcriptionApiKeyController.text = 'demo';
         _transcriptionModelController.text = 'built-in-whisper';
@@ -239,9 +239,9 @@ class _SettingsViewState extends State<SettingsView> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.bolt, size: 22, color: Colors.teal),
-                    SizedBox(width: 10),
-                    Expanded(
+                    Icon(Icons.bolt, size: 22, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 10),
+                    const Expanded(
                       child: Text(
                         'Configuration Guide:\n'
                         '• Ready-to-Use Open AI: Connects out of the box with standard open models.\n'
@@ -270,7 +270,7 @@ class _SettingsViewState extends State<SettingsView> {
               },
             ),
             const SizedBox(height: 24),
-            const Text('LLM Reasoning Engine (Hypotheses, Summaries & Tasks)', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('LLM Reasoning Engine (Summaries, Decisions & Tasks)', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             TextFormField(
               controller: _baseUrlController,
@@ -295,7 +295,7 @@ class _SettingsViewState extends State<SettingsView> {
               controller: _llmModelController,
               decoration: const InputDecoration(
                 labelText: 'LLM Model Name',
-                hintText: 'qwen2.5:7b, biomistral:7b, qwen2.5:1.5b, or llama-3.3-70b-versatile',
+                hintText: 'llama-3.3-70b-versatile, qwen2.5:7b, or gpt-4o-mini',
                 border: OutlineInputBorder(),
               ),
               validator: (value) => value!.isEmpty ? 'Required' : null,
