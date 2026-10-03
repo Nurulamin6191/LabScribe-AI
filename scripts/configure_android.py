@@ -46,6 +46,27 @@ def configure_android_manifest():
     with open(manifest_path, "w", encoding="utf-8") as f:
         f.write(content)
 
+def configure_gradle_properties():
+    props_path = "android/gradle.properties"
+    content = ""
+    if os.path.exists(props_path):
+        with open(props_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+    flags = [
+        "android.experimental.disableCompileSdkChecks=true",
+        "android.suppressUnsupportedCompileSdk=36",
+        "android.suppressUnsupportedCompileSdk=35",
+    ]
+    for flag in flags:
+        if flag not in content:
+            content += f"\n{flag}\n"
+            print(f"Added {flag} to android/gradle.properties")
+
+    with open(props_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("Configured android/gradle.properties successfully")
+
 def configure_app_gradle():
     # Handle Groovy (build.gradle)
     groovy_path = "android/app/build.gradle"
@@ -55,11 +76,11 @@ def configure_app_gradle():
 
         content = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 23', content)
         content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', content)
-        content = re.sub(r'compileSdkVersion\s+flutter\.compileSdkVersion', 'compileSdkVersion 36', content)
-        content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36', content)
-        content = re.sub(r'compileSdkVersion\s+\d+', 'compileSdkVersion 36', content)
-        content = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 36', content)
-        content = re.sub(r'compileSdk\s+\d+', 'compileSdk 36', content)
+        content = re.sub(r'compileSdkVersion\s+flutter\.compileSdkVersion', 'compileSdkVersion 35', content)
+        content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 35', content)
+        content = re.sub(r'compileSdkVersion\s+\d+', 'compileSdkVersion 35', content)
+        content = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 35', content)
+        content = re.sub(r'compileSdk\s+\d+', 'compileSdk 35', content)
 
         if "signingConfig signingConfigs.debug" not in content and "signingConfig = signingConfigs.debug" not in content:
             if "buildTypes {" in content:
@@ -81,8 +102,8 @@ def configure_app_gradle():
             content = f.read()
 
         content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', content)
-        content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36', content)
-        content = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 36', content)
+        content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 35', content)
+        content = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 35', content)
 
         if "signingConfig = signingConfigs.getByName(\"debug\")" not in content and "signingConfig = signingConfigs.debug" not in content:
             if "buildTypes {" in content:
@@ -97,56 +118,7 @@ def configure_app_gradle():
             f.write(content)
         print("Configured android/app/build.gradle.kts successfully")
 
-def configure_root_gradle():
-    # Handle Groovy (android/build.gradle)
-    groovy_root = "android/build.gradle"
-    if os.path.exists(groovy_root):
-        with open(groovy_root, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        override_block = """
-subprojects {
-    project.plugins.withId("com.android.library") {
-        project.android {
-            compileSdkVersion 36
-        }
-    }
-    project.plugins.withId("com.android.application") {
-        project.android {
-            compileSdkVersion 36
-        }
-    }
-}
-"""
-        content = re.sub(r'subprojects\s*\{[\s\S]*?compileSdkVersion[\s\S]*?\}\s*\}', '', content)
-        content += override_block
-        with open(groovy_root, "w", encoding="utf-8") as f:
-            f.write(content)
-        print("Forced compileSdkVersion 36 via plugins.withId in root android/build.gradle")
-
-    # Handle Kotlin DSL (android/build.gradle.kts)
-    kts_root = "android/build.gradle.kts"
-    if os.path.exists(kts_root):
-        with open(kts_root, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        kts_override = """
-subprojects {
-    plugins.withId("com.android.library") {
-        (extensions.findByName("android") as? com.android.build.gradle.BaseExtension)?.compileSdkVersion(36)
-    }
-    plugins.withId("com.android.application") {
-        (extensions.findByName("android") as? com.android.build.gradle.BaseExtension)?.compileSdkVersion(36)
-    }
-}
-"""
-        content = re.sub(r'subprojects\s*\{[\s\S]*?compileSdkVersion[\s\S]*?\}\s*\}', '', content)
-        content += kts_override
-        with open(kts_root, "w", encoding="utf-8") as f:
-            f.write(content)
-        print("Forced compileSdkVersion(36) via plugins.withId in root android/build.gradle.kts")
-
 if __name__ == "__main__":
     configure_android_manifest()
+    configure_gradle_properties()
     configure_app_gradle()
-    configure_root_gradle()
