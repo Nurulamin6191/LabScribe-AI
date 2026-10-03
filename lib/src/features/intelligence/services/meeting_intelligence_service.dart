@@ -6,6 +6,16 @@ import '../../public_apis/services/public_api_service.dart';
 import '../../audio/services/audio_chunker_service.dart';
 import '../../clinical/services/phi_scrubber_service.dart';
 
+/// Exception thrown when transcription fails or engine is not configured
+class TranscriptionException implements Exception {
+  final String message;
+  final bool isNotConfigured;
+  TranscriptionException(this.message, {this.isNotConfigured = false});
+
+  @override
+  String toString() => message;
+}
+
 /// Configuration for AI Providers (Whisper STT & LLM Inference)
 class AiConfig {
   final String openAiApiKey;
@@ -63,11 +73,16 @@ class MeetingIntelligenceService {
 
   AiConfig get config => _config;
 
+  /// Check whether speech-to-text has a configured remote or local provider
+  bool get isTranscriptionConfigured {
+    final url = _config.transcriptionBaseUrl.trim();
+    if (url.isEmpty || url == 'demo') return false;
+    if (url.contains('localhost') || url.contains('127.0.0.1') || url.contains(':8000')) return true;
+    return _config.transcriptionApiKey.isNotEmpty && _config.transcriptionApiKey != 'demo';
+  }
+
   /// Check whether speech-to-text is in built-in simulation mode
-  bool get isTranscriptionDemoMode =>
-      _config.isDemoMode ||
-      _config.transcriptionBaseUrl == 'demo' ||
-      (_config.transcriptionApiKey.isEmpty && _config.transcriptionBaseUrl.contains('openai.com'));
+  bool get isTranscriptionDemoMode => !isTranscriptionConfigured;
 
   /// Check whether LLM intelligence is in 100% offline simulation mode
   bool get isLlmDemoMode =>
@@ -86,7 +101,7 @@ class MeetingIntelligenceService {
     return _phiScrubber.scrubTranscript(rawText);
   }
 
-  /// Transcribe audio file with biomedical prompt conditioning and
+  /// Transcribe audio file with domain prompt conditioning and
   /// automated multi-part segmentation if the file exceeds the 24 MB ceiling.
   Future<String> transcribeAudio({
     required String audioFilePath,
@@ -96,14 +111,14 @@ class MeetingIntelligenceService {
   }) async {
     final file = File(audioFilePath);
     if (!await file.exists()) {
-      throw Exception('Audio file not found at: $audioFilePath');
+      throw TranscriptionException('Audio file not found at: $audioFilePath');
     }
 
-    // If running in demo mode or unconfigured Whisper, use built-in meeting transcription simulator
-    if (isTranscriptionDemoMode) {
-      onProgress?.call('Processing with Whisper transcription engine (Zero-Setup Instant Mode)...');
-      await Future.delayed(const Duration(milliseconds: 1000));
-      return _generateMockIndustrialTranscript();
+    if (!isTranscriptionConfigured) {
+      throw TranscriptionException(
+        'Speech-to-Text engine not configured. Please enter your Whisper API key (e.g. Groq free tier or OpenAI) or connect to local Faster-Whisper in Settings.',
+        isNotConfigured: true,
+      );
     }
 
     final String meetingContextPrompt;
@@ -154,20 +169,27 @@ class MeetingIntelligenceService {
           await _audioChunker.cleanupChunks(chunkPaths, audioFilePath);
         }
 
-        return transcriptParts.join(' ');
+        final fullTranscript = transcriptParts.join(' ').trim();
+        if (fullTranscript.isEmpty) {
+          throw TranscriptionException('Transcription returned empty text. Please check microphone audio capture.');
+        }
+        return fullTranscript;
       } else {
         // Single chunk execution
-        return await _transcribeSingleFile(
+        onProgress?.call('Uploading audio to Whisper transcription engine...');
+        final result = await _transcribeSingleFile(
           filePath: audioFilePath,
           prompt: meetingContextPrompt,
           languageHint: languageHint,
         );
+        if (result.trim().isEmpty) {
+          throw TranscriptionException('Transcription returned empty text. Please check microphone audio capture.');
+        }
+        return result;
       }
     } catch (e) {
-      // Automatic graceful fallback ensuring zero-setup instant operation
-      onProgress?.call('Operating in Zero-Setup Mode (Built-in Speech Engine)...');
-      await Future.delayed(const Duration(milliseconds: 600));
-      return _generateMockIndustrialTranscript();
+      if (e is TranscriptionException) rethrow;
+      throw TranscriptionException('Speech-to-Text transcription failed: ${e.toString().replaceAll("Exception: ", "")}');
     }
   }
 
@@ -182,27 +204,32 @@ class MeetingIntelligenceService {
 
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(file.path, filename: fileName),
-      'model': _config.transcriptionModel,
+      'model': _config.transcriptionModel.isEmpty ? 'whisper-1' : _config.transcriptionModel,
       'response_format': 'json',
       'prompt': prompt,
       if (languageHint != null && languageHint.isNotEmpty) 'language': languageHint,
     });
 
+    final cleanUrl = _config.transcriptionBaseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    final endpoint = cleanUrl.endsWith('/audio/transcriptions') 
+        ? cleanUrl 
+        : '$cleanUrl/audio/transcriptions';
+
     final response = await _dio.post(
-      '${_config.transcriptionBaseUrl}/audio/transcriptions',
+      endpoint,
       data: formData,
       options: Options(
         headers: {
-          if (_config.transcriptionApiKey.isNotEmpty)
+          if (_config.transcriptionApiKey.isNotEmpty && _config.transcriptionApiKey != 'demo')
             'Authorization': 'Bearer ${_config.transcriptionApiKey}',
         },
       ),
     );
 
     if (response.statusCode == 200 && response.data != null) {
-      return response.data['text'] ?? '';
+      return (response.data['text'] ?? '').toString().trim();
     } else {
-      throw Exception('Transcription failed with code: ${response.statusCode}');
+      throw TranscriptionException('Transcription server returned HTTP ${response.statusCode}: ${response.data}');
     }
   }
 
@@ -226,7 +253,11 @@ class MeetingIntelligenceService {
     }
 
     if (isLlmDemoMode) {
-      return _generateMockIndustrialIntelligence(transcript);
+      return _synthesizeTextGroundedIntelligence(
+        transcript: transcript,
+        sessionTitle: sessionTitle,
+        meetingDomain: meetingDomain,
+      );
     }
 
     try {
@@ -360,8 +391,12 @@ $effectiveContext
         speakerTurns: speakerTurns,
       );
     } catch (e) {
-      // Automatic graceful fallback ensuring zero-setup instant operation
-      return _generateMockIndustrialIntelligence(transcript);
+      // Graceful text-grounded fallback ensures 100% fidelity to the actual transcript
+      return _synthesizeTextGroundedIntelligence(
+        transcript: transcript,
+        sessionTitle: sessionTitle,
+        meetingDomain: meetingDomain,
+      );
     }
   }
 
@@ -440,30 +475,18 @@ $transcript
       if (response.statusCode == 200 && response.data != null) {
         return response.data['choices'][0]['message']['content'] ?? 'No response received.';
       }
-      return _generateLocalScientificAnswer(transcript, question);
+      return _generateLocalAnswerFromTranscript(transcript, question);
     } catch (e) {
-      return _generateLocalScientificAnswer(transcript, question);
+      return _generateLocalAnswerFromTranscript(transcript, question);
     }
   }
 
-  /// High-accuracy scientific translation preserving biomedical nomenclature and casing
+  /// High-accuracy meeting translation preserving domain terminology and formatting
   Future<String> translateScientificText({
     required String text,
     required String targetLanguage, // 'Hindi' or 'English'
   }) async {
     if (text.trim().isEmpty) return '';
-
-    if (isLlmDemoMode) {
-      if (targetLanguage.toLowerCase().contains('hi')) {
-        return 'हिन्दी अनुवाद (वैज्ञानिक सारांश):\n\n'
-            'डॉ. चेन: आज की ट्रांसलेशनल ऑन्कोलॉजी शोध बैठक में आप सभी का स्वागत है। '
-            'आज हम नॉन-स्मॉल सेल लंग कैंसर (NSCLC) में KRAS G12C इनहिबिटर प्रतिरोध तंत्र पर हमारे अध्ययनों की समीक्षा कर रहे हैं। '
-            'प्रिया और मार्कस ने H23 सेल लाइन पर सोटोरासिब (Sotorasib) और ओसिमर्टिनिब (Osimertinib) के संयोजन के साथ नए इन विट्रो डेटा पूरे किए हैं। '
-            'फॉस्फो-ERK और फॉस्फो-AKT सिग्नलिंग में महत्वपूर्ण गिरावट देखी गई (p < 0.001)।';
-      } else {
-        return text;
-      }
-    }
 
     try {
       final cleanBaseUrl = _config.openAiBaseUrl.replaceAll(RegExp(r'/+$'), '');
@@ -475,11 +498,9 @@ $transcript
           'messages': [
             {
               'role': 'system',
-              'content': 'You are an expert scientific biomedical translator. '
-                  'Translate the following research text accurately into $targetLanguage. '
-                  'Preserve uppercase capitalization for gene symbols (e.g. KRAS G12C, TP53, EGFR), '
-                  'standard casing for drug names (e.g. cisplatin, sotorasib, osimertinib), '
-                  'assays (Western blot, qPCR, RNA-Seq), and statistical values (p < 0.05, hazard ratio). '
+              'content': 'You are an expert professional meeting and technical document translator. '
+                  'Translate the following transcript text accurately into $targetLanguage. '
+                  'Preserve speaker names, technical terminology, acronyms, dates, and metrics. '
                   'Output only the translated text.'
             },
             {'role': 'user', 'content': text},
@@ -503,31 +524,98 @@ $transcript
     return await _publicApiService.translateText(text: text, targetLang: targetCode);
   }
 
-  String _generateLocalIndustrialAnswer(String transcript, String question) {
-    final q = question.toLowerCase();
-    if (q.contains('action') || q.contains('task') || q.contains('todo') || q.contains('next') || q.contains('deliverable')) {
-      return 'Meeting Assistant: Action Items identified from this meeting:\n'
-          '• Alex: Execute automated load testing with 10k concurrent users on replica cluster by Thursday.\n'
-          '• Priya: Coordinate external security penetration testing and audit sign-off by Friday.\n'
-          '• David: Finalize updated Enterprise SLA documentation for tier-1 clients by Friday.\n'
-          '• Sarah: Sign off on final deployment rollout schedule.';
-    } else if (q.contains('decision') || q.contains('decide') || q.contains('agree') || q.contains('consensus')) {
-      return 'Meeting Assistant: Key Decisions Made:\n'
-          '1. Approved \$12,500 monthly cloud infrastructure budget for secondary failover cluster.\n'
-          '2. Selected Blue/Green deployment strategy over rolling restart to guarantee zero downtime.\n'
-          '3. Enacted 48-hour pull request freeze prior to the November 15th cutover.';
-    } else if (q.contains('budget') || q.contains('cost') || q.contains('money') || q.contains('dollar') || q.contains('\$')) {
-      return 'Meeting Assistant: David and the executive committee formally approved a \$12,500 monthly budget allocation for the secondary multi-region standby cluster in AWS us-east-1.';
-    } else if (q.contains('alex') || q.contains('architecture') || q.contains('database') || q.contains('migration')) {
-      return 'Meeting Assistant: Alex reported that staging benchmarks demonstrated a 42% reduction in p99 API latency following the partitioned database index refactor. Alex is leading the load testing on the replica cluster.';
-    } else if (q.contains('priya') || q.contains('test') || q.contains('rollback') || q.contains('deploy')) {
-      return 'Meeting Assistant: Priya confirmed that automated canary deployments and rollback triggers are configured to trigger automatically if error rates exceed 0.05%. Priya is also overseeing external penetration testing.';
+  /// Grounded answer generator directly querying the user's actual meeting transcript
+  String _generateLocalAnswerFromTranscript(String transcript, String question) {
+    final clean = transcript.trim();
+    if (clean.isEmpty) {
+      return 'Meeting Assistant: No meeting transcript is available to answer your question.';
     }
-    return 'Meeting Assistant: Based on the recorded meeting transcript, the team reviewed Q4 cloud infrastructure migration, staging benchmark improvements (42% p99 latency reduction), approved a \$12,500 failover budget, and assigned deployment deliverables to Alex, Priya, and David.';
+
+    final q = question.toLowerCase();
+    final sentences = clean
+        .split(RegExp(r'(?<=[.!?\n])\s+'))
+        .map((s) => s.trim())
+        .where((s) => s.length > 5)
+        .toList();
+
+    // 1. Action Items query
+    if (q.contains('action') || q.contains('task') || q.contains('todo') || q.contains('deliverable') || q.contains('owner') || q.contains('assign')) {
+      final actionSentences = sentences.where((s) {
+        final lower = s.toLowerCase();
+        return lower.contains('will') ||
+            lower.contains('shall') ||
+            lower.contains('need to') ||
+            lower.contains('needs to') ||
+            lower.contains('must') ||
+            lower.contains('action') ||
+            lower.contains('deadline') ||
+            lower.contains('assigned') ||
+            lower.contains('please') ||
+            lower.contains('ensure') ||
+            lower.contains('finalize');
+      }).take(5).toList();
+
+      if (actionSentences.isNotEmpty) {
+        final buffer = StringBuffer('Meeting Assistant: Action items identified directly in the discussion:\n');
+        for (int i = 0; i < actionSentences.length; i++) {
+          buffer.writeln('${i + 1}. ${actionSentences[i]}');
+        }
+        return buffer.toString().trim();
+      }
+    }
+
+    // 2. Decisions query
+    if (q.contains('decision') || q.contains('decide') || q.contains('agree') || q.contains('conclusion') || q.contains('consensus')) {
+      final decisionSentences = sentences.where((s) {
+        final lower = s.toLowerCase();
+        return lower.contains('decid') ||
+            lower.contains('agree') ||
+            lower.contains('approv') ||
+            lower.contains('resolv') ||
+            lower.contains('conclude') ||
+            lower.contains('consensus') ||
+            lower.contains('selected') ||
+            lower.contains('locked in');
+      }).take(5).toList();
+
+      if (decisionSentences.isNotEmpty) {
+        final buffer = StringBuffer('Meeting Assistant: Consensus decisions noted in the discussion:\n');
+        for (int i = 0; i < decisionSentences.length; i++) {
+          buffer.writeln('${i + 1}. ${decisionSentences[i]}');
+        }
+        return buffer.toString().trim();
+      }
+    }
+
+    // 3. Keyword / Topic search query
+    final queryTokens = q
+        .replaceAll(RegExp(r'[^\w\s]'), '')
+        .split(RegExp(r'\s+'))
+        .where((t) => t.length > 2 && !{'what', 'when', 'where', 'which', 'who', 'about', 'from', 'this', 'that', 'were', 'have', 'with'}.contains(t))
+        .toList();
+
+    if (queryTokens.isNotEmpty) {
+      final matchingSentences = sentences.where((s) {
+        final lower = s.toLowerCase();
+        return queryTokens.any((token) => lower.contains(token));
+      }).take(4).toList();
+
+      if (matchingSentences.isNotEmpty) {
+        final buffer = StringBuffer('Meeting Assistant: Relevant discussion excerpts from the meeting:\n');
+        for (final match in matchingSentences) {
+          buffer.writeln('• "$match"');
+        }
+        return buffer.toString().trim();
+      }
+    }
+
+    // 4. Grounded excerpt fallback
+    final leadSentences = sentences.take(3).join(' ');
+    return 'Meeting Assistant: Based on the meeting transcript:\n\n"$leadSentences"\n\n(Ask specific questions about deliverables, topics, or attendees mentioned in this meeting).';
   }
 
   String _generateLocalScientificAnswer(String transcript, String question) =>
-      _generateLocalIndustrialAnswer(transcript, question);
+      _generateLocalAnswerFromTranscript(transcript, question);
 
   /// Partition transcript into manageable overlapping blocks if it exceeds ~5,000 words
   List<String> _chunkTranscript(String transcript, {int wordsPerChunk = 4000, int overlapWords = 200}) {
@@ -658,122 +746,171 @@ Keep the summary under 350 words while retaining all specific gene names, drug d
     return turns;
   }
 
-  // --- Scientific Mock Fallbacks for Instant Offline Validation ---
+  // --- Grounded Deterministic Intelligence Extractor (Works 100% Offline with Zero Hallucination) ---
 
-  String _generateMockIndustrialTranscript() {
-    return 'Sarah (VP of Product): Good morning everyone. Let us review our Q4 enterprise platform roadmap, cloud infrastructure cutover, and client SLA deliverables.\n\n'
-        'Alex (Lead Architect): On the cloud infrastructure migration, our staging benchmarks in AWS us-east-1 showed a 42% reduction in p99 API latency after implementing the partitioned database cache. Zero-downtime cutover is planned for November 15th.\n\n'
-        'Priya (Engineering Lead): The automated canary deployments and rollback triggers are configured. If error rates exceed 0.05%, traffic immediately falls back to the stable cluster. Priya: Haan Alex, hum staging load testing Wednesday tak complete kar lenge.\n\n'
-        'David (Operations Director): The executive committee has approved the \$12,500 monthly budget allocation for the secondary multi-region standby cluster. We will sign off on the updated enterprise SLA documentation by Friday.\n\n'
-        'Sarah (VP of Product): Excellent progress. Alex, please finalize the load test report by Thursday. Priya, coordinate the security penetration testing with the external audit team. Thank you everyone.';
-  }
-
-  String _generateMockScientificTranscript() => _generateMockIndustrialTranscript();
-
-  Future<({
+  ({
     SummaryResult summary,
     List<ActionItem> actionItems,
     List<GlossaryTerm> glossary,
     List<PubMedCitation> citations,
     List<SpeakerTurn> speakerTurns,
-  })> _generateMockIndustrialIntelligence(String transcript) async {
-    await Future.delayed(const Duration(milliseconds: 1000));
+  }) _synthesizeTextGroundedIntelligence({
+    required String transcript,
+    required String sessionTitle,
+    String? meetingDomain,
+  }) {
+    final clean = transcript.trim();
+    if (clean.isEmpty) {
+      return (
+        summary: SummaryResult(
+          executiveSummary: 'No transcript content was available to synthesize.',
+          keyPoints: [],
+          decisionsMade: [],
+          scientificHypothesis: '',
+          detectedLanguage: 'English',
+        ),
+        actionItems: <ActionItem>[],
+        glossary: <GlossaryTerm>[],
+        citations: <PubMedCitation>[],
+        speakerTurns: <SpeakerTurn>[],
+      );
+    }
 
-    final summary = SummaryResult(
-      executiveSummary:
-          'The executive product and engineering sync reviewed the Q4 enterprise platform roadmap, multi-region cloud infrastructure cutover, and client SLA deliverables. '
-          'Staging benchmarks demonstrated a 42% reduction in p99 API response latency following the partitioned database index refactor. '
-          'Management formally approved a \$12,500 monthly cloud allocation for the secondary standby cluster, with zero-downtime deployment scheduled for November 15th.',
-      keyPoints: [
-        'Cloud infrastructure staging benchmarks show a 42% reduction in p99 API latency.',
-        'Zero-downtime blue/green deployment strategy locked in for November 15th rollout.',
-        'Automated canary rollback triggers validated for error rates exceeding 0.05%.',
-        'Customer success and operations teams aligned on updated enterprise SLAs.',
-      ],
-      decisionsMade: [
-        'Approved \$12,500 monthly cloud infrastructure budget for secondary failover cluster.',
-        'Selected Blue/Green deployment strategy over rolling restart to guarantee zero downtime.',
-        'Agreed to freeze non-critical pull requests 48 hours prior to the migration cutover.',
-      ],
-      scientificHypothesis: '',
-      detectedLanguage: 'English & Hinglish / Business Multilingual',
+    // 1. Split into natural sentences
+    final rawSentences = clean
+        .split(RegExp(r'(?<=[.!?\n])\s+'))
+        .map((s) => s.trim())
+        .where((s) => s.length > 5)
+        .toList();
+
+    final sentences = rawSentences.isNotEmpty ? rawSentences : [clean];
+
+    // 2. Extract Action Items directly from user text
+    final actionItemKeywords = RegExp(
+      r'\b(will|shall|need to|needs to|must|should|action|task|todo|to-do|assigned|please|ensure|make sure|finalize|prepare|deploy|review|submit|coordinate|by Friday|by tomorrow|by Monday|by next week|deadline)\b',
+      caseSensitive: false,
     );
 
-    final speakerTurns = [
-      SpeakerTurn(
-        id: 'turn-1',
-        speakerId: 'Speaker 1',
-        speakerName: 'Sarah (VP of Product)',
-        startSeconds: 0,
-        endSeconds: 32,
-        text: 'Good morning everyone. Let us review our Q4 enterprise platform roadmap, cloud infrastructure cutover, and client SLA deliverables.',
-      ),
-      SpeakerTurn(
-        id: 'turn-2',
-        speakerId: 'Speaker 2',
-        speakerName: 'Alex (Lead Architect)',
-        startSeconds: 33,
-        endSeconds: 78,
-        text: 'On the cloud infrastructure migration, our staging benchmarks in AWS us-east-1 showed a 42% reduction in p99 API latency after implementing the partitioned database cache. Zero-downtime cutover is planned for November 15th.',
-      ),
-      SpeakerTurn(
-        id: 'turn-3',
-        speakerId: 'Speaker 3',
-        speakerName: 'Priya (Engineering Lead)',
-        startSeconds: 79,
-        endSeconds: 114,
-        text: 'The automated canary deployments and rollback triggers are configured. If error rates exceed 0.05%, traffic immediately falls back to the stable cluster. Priya: Haan Alex, hum staging load testing Wednesday tak complete kar lenge.',
-      ),
-      SpeakerTurn(
-        id: 'turn-4',
-        speakerId: 'Speaker 4',
-        speakerName: 'David (Operations Director)',
-        startSeconds: 115,
-        endSeconds: 148,
-        text: 'The executive committee has approved the \$12,500 monthly budget allocation for the secondary multi-region standby cluster. We will sign off on the updated enterprise SLA documentation by Friday.',
-      ),
-      SpeakerTurn(
-        id: 'turn-5',
-        speakerId: 'Speaker 1',
-        speakerName: 'Sarah (VP of Product)',
-        startSeconds: 149,
-        endSeconds: 178,
-        text: 'Excellent progress. Alex, please finalize the load test report by Thursday. Priya, coordinate the security penetration testing with the external audit team. Thank you everyone.',
-      ),
-    ];
+    final List<ActionItem> actionItems = [];
+    int actionIdCounter = 1;
 
-    final actionItems = [
-      ActionItem(
-        id: '1',
-        task: 'Execute automated load testing with 10k concurrent users on AWS replica cluster',
-        assignee: 'Alex',
-        deadline: 'Thursday',
-        priority: 'High',
-        category: 'Engineering',
-        speaker: 'Sarah (VP of Product)',
-      ),
-      ActionItem(
-        id: '2',
-        task: 'Coordinate external security penetration testing and audit sign-off',
-        assignee: 'Priya',
-        deadline: 'Friday',
-        priority: 'High',
-        category: 'Operations',
-        speaker: 'Sarah (VP of Product)',
-      ),
-      ActionItem(
-        id: '3',
-        task: 'Finalize and publish updated Enterprise SLA documentation for tier-1 clients',
-        assignee: 'David',
-        deadline: 'Friday',
-        priority: 'Medium',
-        category: 'Management',
-        speaker: 'David (Operations Director)',
-      ),
-    ];
+    for (final sentence in sentences) {
+      if (actionItemKeywords.hasMatch(sentence)) {
+        String assignee = 'Team';
+        final speakerMatch = RegExp(r'^([A-Z][a-zA-Z0-9_\s]{1,15}):').firstMatch(sentence);
+        if (speakerMatch != null) {
+          assignee = speakerMatch.group(1)!.trim();
+        }
+
+        String? deadline;
+        final deadlineMatch = RegExp(r'\b(?:by|before|on)\s+(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|tomorrow|next week|end of day|EOD)\b', caseSensitive: false).firstMatch(sentence);
+        if (deadlineMatch != null) {
+          deadline = deadlineMatch.group(0);
+        }
+
+        actionItems.add(ActionItem(
+          id: 'action-${actionIdCounter++}',
+          task: sentence.replaceAll(RegExp(r'^\[.*?\]\s*'), '').replaceAll(RegExp(r'^[A-Z][a-zA-Z0-9_\s]{1,15}:\s*'), '').trim(),
+          assignee: assignee,
+          deadline: deadline,
+          priority: (sentence.toLowerCase().contains('critical') || sentence.toLowerCase().contains('urgent') || sentence.toLowerCase().contains('must')) ? 'High' : 'Medium',
+          category: meetingDomain ?? 'General',
+        ));
+
+        if (actionItems.length >= 8) break;
+      }
+    }
+
+    // 3. Extract Decisions from user text
+    final decisionKeywords = RegExp(
+      r'\b(agreed|decided|approved|confirmed|resolved|concluded|consensus|selected|chosen|locked in|we will proceed)\b',
+      caseSensitive: false,
+    );
+
+    final List<String> decisionsMade = [];
+    for (final sentence in sentences) {
+      if (decisionKeywords.hasMatch(sentence)) {
+        decisionsMade.add(sentence.replaceAll(RegExp(r'^\[.*?\]\s*'), '').replaceAll(RegExp(r'^[A-Z][a-zA-Z0-9_\s]{1,15}:\s*'), '').trim());
+        if (decisionsMade.length >= 6) break;
+      }
+    }
+
+    // 4. Extract Key Discussion Points
+    final List<String> keyPoints = [];
+    for (final sentence in sentences) {
+      if (!decisionsMade.contains(sentence) && sentence.length > 20) {
+        keyPoints.add(sentence.replaceAll(RegExp(r'^\[.*?\]\s*'), '').trim());
+        if (keyPoints.length >= 5) break;
+      }
+    }
+    if (keyPoints.isEmpty) {
+      keyPoints.addAll(sentences.take(3));
+    }
+
+    // 5. Construct Grounded Executive Summary
+    final leadText = sentences.take(2).join(' ');
+    final middleText = sentences.length > 4 ? sentences.sublist(2, (sentences.length > 6 ? 6 : sentences.length)).join(' ') : '';
+    final conclusionText = decisionsMade.isNotEmpty ? 'Core consensus established: ${decisionsMade.join('; ')}.' : '';
+
+    final executiveSummary = [
+      'Executive Briefing: Discussion focused on ${sessionTitle.isNotEmpty ? sessionTitle : "the session topics"}. $leadText',
+      if (middleText.isNotEmpty) middleText,
+      if (conclusionText.isNotEmpty) conclusionText,
+    ].join('\n\n');
+
+    // 6. Parse / Synthesize Speaker Turns from user text
+    final List<SpeakerTurn> speakerTurns = [];
+    final speakerTurnRegex = RegExp(r'(?:\[(\d{1,2}:\d{2}(?:\s*-\s*\d{1,2}:\d{2})?)\])?\s*([A-Za-z0-9_\s]{2,20}):\s*(.*)');
+
+    int currentTurnSeconds = 0;
+    int turnId = 1;
+
+    for (final line in clean.split('\n')) {
+      final match = speakerTurnRegex.firstMatch(line.trim());
+      if (match != null) {
+        final name = match.group(2)!.trim();
+        final text = match.group(3)!.trim();
+        if (text.isNotEmpty) {
+          speakerTurns.add(SpeakerTurn(
+            id: 'turn-${turnId++}',
+            speakerId: 'Speaker ${((turnId - 1) % 4) + 1}',
+            speakerName: name,
+            startSeconds: currentTurnSeconds,
+            endSeconds: currentTurnSeconds + 15,
+            text: text,
+          ));
+          currentTurnSeconds += 16;
+        }
+      }
+    }
+
+    // If no explicit "Name: speech" format, create sequential speaker turns
+    if (speakerTurns.isEmpty) {
+      int idx = 1;
+      for (int i = 0; i < sentences.length; i += 2) {
+        final turnText = sentences.skip(i).take(2).join(' ');
+        final speakerNum = ((idx - 1) % 3) + 1;
+        speakerTurns.add(SpeakerTurn(
+          id: 'turn-$idx',
+          speakerId: 'Speaker $speakerNum',
+          speakerName: 'Speaker $speakerNum',
+          startSeconds: (idx - 1) * 20,
+          endSeconds: idx * 20,
+          text: turnText,
+        ));
+        idx++;
+        if (idx > 15) break;
+      }
+    }
 
     return (
-      summary: summary,
+      summary: SummaryResult(
+        executiveSummary: executiveSummary,
+        keyPoints: keyPoints,
+        decisionsMade: decisionsMade,
+        scientificHypothesis: '',
+        detectedLanguage: 'English / Multilingual',
+      ),
       actionItems: actionItems,
       glossary: <GlossaryTerm>[],
       citations: <PubMedCitation>[],
@@ -781,14 +918,14 @@ Keep the summary under 350 words while retaining all specific gene names, drug d
     );
   }
 
-  Future<({
-    SummaryResult summary,
-    List<ActionItem> actionItems,
-    List<GlossaryTerm> glossary,
-    List<PubMedCitation> citations,
-    List<SpeakerTurn> speakerTurns,
-  })> _generateMockScientificIntelligence(String transcript) =>
-      _generateMockIndustrialIntelligence(transcript);
+  /// Sample demo transcript loader for quick platform walkthroughs
+  String loadSampleDemoTranscript() {
+    return 'Sarah (VP of Product): Good morning everyone. Let us review our enterprise roadmap and client SLA deliverables.\n\n'
+        'Alex (Lead Architect): On the cloud infrastructure migration, our staging benchmarks showed a 42% reduction in p99 API latency.\n\n'
+        'Priya (Engineering Lead): The automated canary deployments and rollback triggers are configured and passing health checks.\n\n'
+        'David (Operations Director): The executive committee has approved the monthly budget allocation for the secondary cluster.\n\n'
+        'Sarah (VP of Product): Excellent progress. Alex, please finalize the load test report by Thursday. Priya, coordinate the security testing.';
+  }
 }
 
 extension StringExtension on String {

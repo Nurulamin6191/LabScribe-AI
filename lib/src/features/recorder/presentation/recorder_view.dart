@@ -213,36 +213,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   void _startLiveTranscriptionStream() {
     _liveTranscriptionTimer?.cancel();
+    _liveTranscriptionStream.clear();
     _isLiveTranscribing = true;
-
-    // Real-time speech streaming preview during recording
-    final sampleRealtimeDialogue = [
-      'Sarah: Welcome everyone. Let us review our quarterly deliverables and technical roadmap.',
-      'Alex: On the infrastructure side, database latency has dropped significantly following caching.',
-      'Priya: Automated deployment and rollback triggers are active and passing health checks.',
-      'David: The executive committee approved the infrastructure budget for regional failover.',
-      'Sarah: Excellent. Let us ensure the action items and deadlines are locked in before Friday.',
-    ];
-
-    int chunkIndex = 0;
-    _liveTranscriptionTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
-      if (_recordingState != RecordingState.recording || !mounted) {
-        timer.cancel();
-        return;
-      }
-      if (chunkIndex < sampleRealtimeDialogue.length) {
-        setState(() {
-          _liveTranscriptionStream.add(sampleRealtimeDialogue[chunkIndex]);
-        });
-        chunkIndex++;
-      } else {
-        final timeStr = _formatDuration(_recordDurationSeconds);
-        setState(() {
-          _liveTranscriptionStream.add('[$timeStr] ... active speech stream captured ...');
-        });
-      }
-    });
   }
+
 
   Future<void> _startRecording() async {
     try {
@@ -910,12 +884,182 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         _processingStage = ProcessingStage.error;
         _statusMessage = 'Error during AI pipeline: $e';
       });
-      if (_isConnectionError(e)) {
+      if (e is TranscriptionException && e.isNotConfigured) {
+        _showConfigureWhisperDialog();
+      } else if (_isConnectionError(e)) {
         _showAiConnectionErrorDialog(e);
       } else {
         _showSnackBar('Pipeline error: $e');
       }
     }
+  }
+
+  /// Interactive dialog allowing instant 1-click configuration of Whisper speech-to-text
+  void _showConfigureWhisperDialog() {
+    final apiKeyController = TextEditingController();
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.mic, color: Colors.blueAccent),
+            SizedBox(width: 10),
+            Expanded(child: Text('Connect Speech-to-Text Engine', style: TextStyle(fontSize: 16))),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'To transcribe your audio recording into text, LabScribe connects directly to a Whisper speech-to-text engine.',
+                style: TextStyle(fontSize: 13, height: 1.4),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.bolt, color: Colors.amber, size: 18),
+                        SizedBox(width: 6),
+                        Text('Recommended: Groq Free Tier', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Sub-second transcription with Whisper Large-v3. Free forever, no credit card required at console.groq.com.',
+                      style: TextStyle(fontSize: 11.5, color: Colors.grey, height: 1.3),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: apiKeyController,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        hintText: 'Paste Groq key (gsk_...) or OpenAI (sk-...)',
+                        labelText: 'API Key',
+                        prefixIcon: Icon(Icons.key, size: 18),
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.computer, size: 16),
+                      label: const Text('Local Server (Port 8000)', style: TextStyle(fontSize: 11)),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await ConfigService().saveConfig(
+                          openAiBaseUrl: ConfigService().openAiBaseUrl,
+                          openAiApiKey: ConfigService().openAiApiKey,
+                          llmModel: ConfigService().llmModel,
+                          transcriptionBaseUrl: 'http://localhost:8000/v1',
+                          transcriptionApiKey: 'local',
+                          transcriptionModel: 'Systran/faster-whisper-small',
+                          libreTranslateBaseUrl: ConfigService().libreTranslateBaseUrl,
+                          isDemoMode: false,
+                        );
+                        widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
+                        _executeAiPipeline();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Center(
+                child: TextButton.icon(
+                  icon: const Icon(Icons.description_outlined, size: 16),
+                  label: const Text('Load Sample Walkthrough Transcript', style: TextStyle(fontSize: 12)),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    final sample = widget.intelligenceService.loadSampleDemoTranscript();
+                    _processTextDirectly(sample);
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Save & Transcribe'),
+            onPressed: () async {
+              final key = apiKeyController.text.trim();
+              if (key.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please paste an API key, or choose Local Server.')),
+                );
+                return;
+              }
+
+              Navigator.pop(ctx);
+              final isGroq = key.startsWith('gsk_');
+              final isOai = key.startsWith('sk-');
+
+              if (isGroq) {
+                await ConfigService().saveConfig(
+                  openAiBaseUrl: 'https://api.groq.com/openai/v1',
+                  openAiApiKey: key,
+                  llmModel: 'llama-3.3-70b-versatile',
+                  transcriptionBaseUrl: 'https://api.groq.com/openai/v1',
+                  transcriptionApiKey: key,
+                  transcriptionModel: 'whisper-large-v3',
+                  libreTranslateBaseUrl: ConfigService().libreTranslateBaseUrl,
+                  isDemoMode: false,
+                );
+              } else if (isOai) {
+                await ConfigService().saveConfig(
+                  openAiBaseUrl: 'https://api.openai.com/v1',
+                  openAiApiKey: key,
+                  llmModel: 'gpt-4o-mini',
+                  transcriptionBaseUrl: 'https://api.openai.com/v1',
+                  transcriptionApiKey: key,
+                  transcriptionModel: 'whisper-1',
+                  libreTranslateBaseUrl: ConfigService().libreTranslateBaseUrl,
+                  isDemoMode: false,
+                );
+              } else {
+                await ConfigService().saveConfig(
+                  openAiBaseUrl: ConfigService().openAiBaseUrl,
+                  openAiApiKey: ConfigService().openAiApiKey,
+                  llmModel: ConfigService().llmModel,
+                  transcriptionBaseUrl: 'https://api.groq.com/openai/v1',
+                  transcriptionApiKey: key,
+                  transcriptionModel: 'whisper-large-v3',
+                  libreTranslateBaseUrl: ConfigService().libreTranslateBaseUrl,
+                  isDemoMode: false,
+                );
+              }
+
+              widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
+              _executeAiPipeline();
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   /// Process meeting intelligence directly from pasted text or lecture notes
@@ -2564,20 +2708,26 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  // --- Real-Time Live Streaming Preview During Recording ---
+  // --- Real-Time Acoustic & Voice Activity Detection Monitor During Recording ---
 
   Widget _buildRealtimeTranscriptionPanel(ThemeData theme) {
-    if (_recordingState != RecordingState.recording && _liveTranscriptionStream.isEmpty) {
+    if (_recordingState != RecordingState.recording) {
       return const SizedBox.shrink();
     }
+
+    final isVoiceActive = _currentDecibels > -42.0;
 
     return Container(
       margin: const EdgeInsets.only(top: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer.withOpacity(0.18),
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.35),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.colorScheme.primary.withOpacity(0.35)),
+        border: Border.all(
+          color: isVoiceActive
+              ? Colors.teal.withOpacity(0.6)
+              : theme.colorScheme.outlineVariant.withOpacity(0.5),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2587,50 +2737,40 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               Container(
                 width: 8,
                 height: 8,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.redAccent,
+                  color: isVoiceActive ? Colors.greenAccent : Colors.orangeAccent,
                 ),
               ),
               const SizedBox(width: 8),
-              const Text(
-                'LIVE STREAMING SPEECH PREVIEW',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10.5, letterSpacing: 0.5, color: Colors.teal),
+              Text(
+                isVoiceActive ? 'VOICE ACTIVITY DETECTED' : 'LISTENING (AMBIENT NOISE)',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 10.5,
+                  letterSpacing: 0.5,
+                  color: isVoiceActive ? Colors.teal : Colors.orange[800],
+                ),
               ),
               const Spacer(),
-              if (_recordingState == RecordingState.recording)
-                const SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
+              Text(
+                '${_currentDecibels.toStringAsFixed(1)} dBFS',
+                style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace', fontWeight: FontWeight.bold),
+              ),
             ],
           ),
           const SizedBox(height: 8),
-          Container(
-            constraints: const BoxConstraints(maxHeight: 110),
-            child: SingleChildScrollView(
-              reverse: true,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: _liveTranscriptionStream.isEmpty
-                    ? [
-                        const Text(
-                          'Listening for live audio speech...',
-                          style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.grey),
-                        )
-                      ]
-                    : _liveTranscriptionStream.map((chunk) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Text(
-                            chunk,
-                            style: const TextStyle(fontSize: 11.5, height: 1.35),
-                          ),
-                        );
-                      }).toList(),
+          Row(
+            children: [
+              const Icon(Icons.security, size: 14, color: Colors.blueAccent),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Air-gapped audio stream actively buffering to local storage (${_formatDuration(_recordDurationSeconds)}). High-accuracy transcription will run via Whisper upon stopping.',
+                  style: const TextStyle(fontSize: 11, color: Colors.grey, height: 1.3),
+                ),
               ),
-            ),
+            ],
           ),
         ],
       ),

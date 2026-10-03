@@ -11,9 +11,9 @@ class ConfigService {
   String openAiBaseUrl = 'https://text.pollinations.ai/openai';
   String openAiApiKey = 'zero-setup';
   String llmModel = 'openai-fast';
-  String transcriptionBaseUrl = 'demo';
-  String transcriptionApiKey = 'demo';
-  String transcriptionModel = 'built-in-whisper';
+  String transcriptionBaseUrl = '';
+  String transcriptionApiKey = '';
+  String transcriptionModel = 'whisper-large-v3';
   String libreTranslateBaseUrl = 'http://localhost:5000';
   bool isDemoMode = false;
 
@@ -22,11 +22,15 @@ class ConfigService {
     openAiBaseUrl = _prefs.getString('openAiBaseUrl') ?? 'https://text.pollinations.ai/openai';
     openAiApiKey = _prefs.getString('openAiApiKey') ?? 'zero-setup';
     llmModel = _prefs.getString('llmModel') ?? 'openai-fast';
-    transcriptionBaseUrl = _prefs.getString('transcriptionBaseUrl') ?? 'demo';
-    transcriptionApiKey = _prefs.getString('transcriptionApiKey') ?? 'demo';
-    transcriptionModel = _prefs.getString('transcriptionModel') ?? 'built-in-whisper';
+    transcriptionBaseUrl = _prefs.getString('transcriptionBaseUrl') ?? '';
+    transcriptionApiKey = _prefs.getString('transcriptionApiKey') ?? '';
+    transcriptionModel = _prefs.getString('transcriptionModel') ?? 'whisper-large-v3';
     libreTranslateBaseUrl = _prefs.getString('libreTranslateBaseUrl') ?? 'http://localhost:5000';
     isDemoMode = _prefs.getBool('isDemoMode') ?? false;
+
+    // Reset stale demo placeholders so real transcription is attempted or prompted
+    if (transcriptionBaseUrl == 'demo') transcriptionBaseUrl = '';
+    if (transcriptionApiKey == 'demo') transcriptionApiKey = '';
   }
 
   Future<void> saveConfig({
