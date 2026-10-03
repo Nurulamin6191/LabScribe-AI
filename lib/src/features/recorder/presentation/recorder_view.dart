@@ -2025,6 +2025,365 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
+  // --- Industrial Meeting Recording Control Panel (Desktop Sidebar & Mobile View) ---
+
+  Widget _buildRecordingControlPanel(ThemeData theme) {
+    return Container(
+      color: theme.colorScheme.surface,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Meeting Title Field
+          TextField(
+            controller: _titleController,
+            decoration: const InputDecoration(
+              labelText: 'Meeting Title',
+              hintText: 'e.g. Q4 Cloud Migration & Architecture Review',
+              prefixIcon: Icon(Icons.meeting_room_outlined),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Domain Selector (Corporate, Engineering, Product, Sales, etc.)
+          _buildMeetingDomainSelector(theme),
+          const SizedBox(height: 10),
+
+          // Audio Quality Selector (Hi-Fi 128 kbps, Studio 256 kbps, Compact 64 kbps)
+          _buildAudioQualitySelector(theme),
+          const SizedBox(height: 10),
+
+          // Audio Input Microphone Device Selector
+          _buildAudioDeviceSelector(theme),
+          const SizedBox(height: 10),
+
+          // Multilingual Selector (English, Hindi, Hinglish)
+          _buildLanguageSelector(theme),
+          const SizedBox(height: 14),
+
+          // Recording Timer Display
+          Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer.withOpacity(0.25),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: _recordingState == RecordingState.recording
+                      ? Colors.redAccent
+                      : theme.colorScheme.outlineVariant,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    _formatDuration(_recordDurationSeconds),
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                      color: _recordingState == RecordingState.recording
+                          ? Colors.redAccent
+                          : theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _recordingState == RecordingState.recording
+                              ? Colors.redAccent
+                              : (_recordingState == RecordingState.paused ? Colors.orange : Colors.grey),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _recordingState == RecordingState.recording
+                            ? 'AIR-GAPPED RECORDING ACTIVE'
+                            : _recordingState.name.toUpperCase(),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Live 28-Bar Waveform Visualizer
+          _buildLiveWaveformVisualizer(theme),
+          const SizedBox(height: 10),
+
+          // Real-time Decibel Meter (-60 dB to 0 dB)
+          _buildDecibelMeterGauge(theme),
+          const SizedBox(height: 12),
+
+          // Recording Controls
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            children: [
+              if (_recordingState == RecordingState.idle || _recordingState == RecordingState.stopped) ...[
+                ElevatedButton.icon(
+                  onPressed: _startRecording,
+                  icon: const Icon(Icons.fiber_manual_record, color: Colors.white),
+                  label: const Text('Record'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _importAudioFileDialog,
+                  icon: const Icon(Icons.file_upload_outlined, size: 16),
+                  label: const Text('Import Audio'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _showPasteTranscriptDialog,
+                  icon: const Icon(Icons.paste, size: 16),
+                  label: const Text('Paste Text'),
+                ),
+              ],
+              if (_recordingState == RecordingState.recording) ...[
+                OutlinedButton.icon(
+                  onPressed: _pauseRecording,
+                  icon: const Icon(Icons.pause),
+                  label: const Text('Pause'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _stopRecording,
+                  icon: const Icon(Icons.stop),
+                  label: const Text('Stop & Save'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueGrey,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+              if (_recordingState == RecordingState.paused) ...[
+                ElevatedButton.icon(
+                  onPressed: _resumeRecording,
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Resume'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _stopRecording,
+                  icon: const Icon(Icons.stop),
+                  label: const Text('Stop & Save'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueGrey,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // 1-Click Meeting Action Tag Chips
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            alignment: WrapAlignment.center,
+            children: [
+              ActionChip(
+                visualDensity: VisualDensity.compact,
+                avatar: const Text('⚡', style: TextStyle(fontSize: 12)),
+                label: const Text('Action', style: TextStyle(fontSize: 11)),
+                onPressed: () => _quickAddTag('⚡', 'Action Item'),
+              ),
+              ActionChip(
+                visualDensity: VisualDensity.compact,
+                avatar: const Text('📌', style: TextStyle(fontSize: 12)),
+                label: const Text('Decision', style: TextStyle(fontSize: 11)),
+                onPressed: () => _quickAddTag('📌', 'Decision'),
+              ),
+              ActionChip(
+                visualDensity: VisualDensity.compact,
+                avatar: const Text('💡', style: TextStyle(fontSize: 12)),
+                label: const Text('Idea', style: TextStyle(fontSize: 11)),
+                onPressed: () => _quickAddTag('💡', 'Idea'),
+              ),
+              ActionChip(
+                visualDensity: VisualDensity.compact,
+                avatar: const Text('⚠️', style: TextStyle(fontSize: 12)),
+                label: const Text('Risk / Blocker', style: TextStyle(fontSize: 11)),
+                onPressed: () => _quickAddTag('⚠️', 'Risk / Blocker'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Bookmark Dialog Button & Slide Attachment
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _addLiveMeetingNoteDialog,
+                  icon: const Icon(Icons.bookmark_add, color: Colors.orange, size: 16),
+                  label: Text('Note @ ${_formatDuration(_recordDurationSeconds)}', style: const TextStyle(fontSize: 11)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.orange),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _attachFigureDialog,
+                  icon: const Icon(Icons.add_photo_alternate, size: 16),
+                  label: const Text('Slide / Visual', style: TextStyle(fontSize: 11)),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Real-time speech preview during live recording
+          _buildRealtimeTranscriptionPanel(theme),
+          const SizedBox(height: 10),
+
+          // Audio Player bar (play, seek, speed, skip)
+          _buildAudioPlaybackBar(theme),
+          const SizedBox(height: 10),
+
+          // Sensitive Data & PII Redaction Switch
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Sensitive Data & PII Redaction', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              subtitle: const Text('Mask names, credentials & identifiers', style: TextStyle(fontSize: 10)),
+              value: _enableSensitiveDataRedaction,
+              onChanged: (val) {
+                setState(() {
+                  _enableSensitiveDataRedaction = val;
+                });
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Virtual Call Mode Switch
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: const Text('Virtual Call Mode', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    subtitle: const Text('Zoom / Teams / Meet loopback', style: TextStyle(fontSize: 10)),
+                    value: _isVirtualCallMode,
+                    onChanged: (val) {
+                      setState(() {
+                        _isVirtualCallMode = val;
+                        if (_currentSession != null) {
+                          _currentSession!.isVirtualCall = val;
+                        }
+                      });
+                      if (_currentSession != null) {
+                        SessionRepository().saveSession(_currentSession!);
+                      }
+                    },
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.help_outline, size: 18, color: Colors.blueAccent),
+                  tooltip: 'Virtual Call Audio Capture Guide',
+                  onPressed: _showVirtualCallGuideDialog,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Process AI Meeting Intelligence Button
+          ElevatedButton.icon(
+            onPressed: (_recordingState == RecordingState.stopped || _currentSession != null) &&
+                    _processingStage != ProcessingStage.transcribing &&
+                    _processingStage != ProcessingStage.summarizing
+                ? _executeAiPipeline
+                : null,
+            icon: const Icon(Icons.auto_awesome),
+            label: const Text('Process AI Tasks & Insights'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.primary,
+              foregroundColor: theme.colorScheme.onPrimary,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Progress Indicator & Status Message
+          if (_processingStage != ProcessingStage.idle) ...[
+            LinearProgressIndicator(
+              value: _processingStage == ProcessingStage.completed
+                  ? 1.0
+                  : (_processingStage == ProcessingStage.transcribing
+                      ? 0.3
+                      : _processingStage == ProcessingStage.deidentifying
+                          ? 0.5
+                          : 0.8),
+            ),
+            const SizedBox(height: 6),
+          ],
+          Text(
+            _statusMessage,
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline, fontSize: 11),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+
+          // Air-Gapped Local Cache Indicator
+          if (_recordedAudioPath != null)
+            Card(
+              elevation: 0,
+              color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Air-Gapped Local Audio Cache:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                    const SizedBox(height: 2),
+                    Text(
+                      _recordedAudioPath!,
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   // --- Meeting Domain Selector ---
 
   Widget _buildMeetingDomainSelector(ThemeData theme) {
@@ -2754,7 +3113,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               color: Colors.blue.withOpacity(0.06),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                side: BorderSide(color: Colors.blue.withOpacity(0.3)),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(16),

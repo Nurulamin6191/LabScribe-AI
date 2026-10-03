@@ -91,6 +91,7 @@ class MeetingIntelligenceService {
   Future<String> transcribeAudio({
     required String audioFilePath,
     String? languageHint, // 'en', 'hi', or null for auto-detect
+    String? domainHint, // 'general', 'engineering', 'product', 'sales', 'standup', 'research'
     void Function(String progressUpdate)? onProgress,
   }) async {
     final file = File(audioFilePath);
@@ -111,9 +112,12 @@ class MeetingIntelligenceService {
           'व्यावसायिक कॉर्पोरेट मीटिंग, तकनीकी इंजीनियरिंग चर्चा, उत्पाद रणनीति और प्रोजेक्ट प्लानिंग सत्र। '
           'Professional business meeting, technical engineering sync, executive review, and project planning session in Hindi, English, and Hinglish. '
           'Transcribe speaker dialogue, technical terminology, acronyms, dates, metrics, action items, and discussion points accurately with natural casing, proper punctuation, and Devanagari/English script.';
-    } else if (languageHint == 'research') {
+    } else if (domainHint == 'research' || languageHint == 'research') {
       meetingContextPrompt = 
           'Scientific research seminar and technical symposium. Terms: gene symbols, chemistry, experimental assays, and statistical metrics (p-value, 95% CI). Transcribe scientific terminology accurately with standard casing.';
+    } else if (domainHint == 'engineering') {
+      meetingContextPrompt = 
+          'Technical engineering meeting, software architecture review, cloud infrastructure, API design, DevOps, sprint planning, and pull request review. Transcribe technical terms, system components, latency metrics, and bug tickets accurately.';
     } else {
       meetingContextPrompt = 
           'Professional business meeting, executive review, technical engineering sync, sprint planning, product roadmap, and corporate discussion. '
