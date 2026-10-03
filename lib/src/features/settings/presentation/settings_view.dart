@@ -19,15 +19,16 @@ class _SettingsViewState extends State<SettingsView> {
   late TextEditingController _transcriptionModelController;
   late TextEditingController _translateUrlController;
   
-  String _selectedPreset = 'Local: Balanced (Qwen 2.5 7B + Faster-Whisper)';
+  String _selectedPreset = 'Offline Demo / Simulation (No Server / Zero Setup)';
 
   final List<String> _presets = [
+    'Offline Demo / Simulation (No Server / Zero Setup)',
+    'Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)',
+    'Cloud: OpenAI (Whisper-1 + GPT-4o-mini)',
     'Local: Balanced (Qwen 2.5 7B + Faster-Whisper)',
     'Local: Biomedical Specialist (BioMistral 7B + Faster-Whisper)',
     'Local: Ultra-Compact (Qwen 2.5 1.5B + Whisper Base)',
     'Lab Server: vLLM High-Throughput (Port 8000)',
-    'Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)',
-    'Cloud: OpenAI (Whisper-1 + GPT-4o-mini)',
     'Custom Endpoint',
   ];
 
@@ -49,7 +50,13 @@ class _SettingsViewState extends State<SettingsView> {
     final url = _baseUrlController.text;
     final model = _llmModelController.text;
 
-    if (model.contains('biomistral')) {
+    if (url == 'demo' || ConfigService().isDemoMode) {
+      _selectedPreset = 'Offline Demo / Simulation (No Server / Zero Setup)';
+    } else if (url.contains('api.groq.com')) {
+      _selectedPreset = 'Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)';
+    } else if (url.contains('api.openai.com')) {
+      _selectedPreset = 'Cloud: OpenAI (Whisper-1 + GPT-4o-mini)';
+    } else if (model.contains('biomistral')) {
       _selectedPreset = 'Local: Biomedical Specialist (BioMistral 7B + Faster-Whisper)';
     } else if (url.contains('localhost:11434') && model.contains('1.5b')) {
       _selectedPreset = 'Local: Ultra-Compact (Qwen 2.5 1.5B + Whisper Base)';
@@ -57,10 +64,6 @@ class _SettingsViewState extends State<SettingsView> {
       _selectedPreset = 'Local: Balanced (Qwen 2.5 7B + Faster-Whisper)';
     } else if (url.contains(':8000')) {
       _selectedPreset = 'Lab Server: vLLM High-Throughput (Port 8000)';
-    } else if (url.contains('api.groq.com')) {
-      _selectedPreset = 'Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)';
-    } else if (url.contains('api.openai.com')) {
-      _selectedPreset = 'Cloud: OpenAI (Whisper-1 + GPT-4o-mini)';
     } else {
       _selectedPreset = 'Custom Endpoint';
     }
@@ -69,7 +72,28 @@ class _SettingsViewState extends State<SettingsView> {
   void _applyPreset(String preset) {
     setState(() {
       _selectedPreset = preset;
-      if (preset == 'Local: Balanced (Qwen 2.5 7B + Faster-Whisper)') {
+      if (preset == 'Offline Demo / Simulation (No Server / Zero Setup)') {
+        _baseUrlController.text = 'demo';
+        _apiKeyController.text = 'demo';
+        _llmModelController.text = 'demo-scientific-ai';
+        _transcriptionBaseUrlController.text = 'demo';
+        _transcriptionApiKeyController.text = 'demo';
+        _transcriptionModelController.text = 'demo-whisper';
+      } else if (preset == 'Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)') {
+        _baseUrlController.text = 'https://api.groq.com/openai/v1';
+        _apiKeyController.clear();
+        _llmModelController.text = 'llama-3.3-70b-versatile';
+        _transcriptionBaseUrlController.text = 'https://api.groq.com/openai/v1';
+        _transcriptionApiKeyController.clear();
+        _transcriptionModelController.text = 'whisper-large-v3';
+      } else if (preset == 'Cloud: OpenAI (Whisper-1 + GPT-4o-mini)') {
+        _baseUrlController.text = 'https://api.openai.com/v1';
+        _apiKeyController.clear();
+        _llmModelController.text = 'gpt-4o-mini';
+        _transcriptionBaseUrlController.text = 'https://api.openai.com/v1';
+        _transcriptionApiKeyController.clear();
+        _transcriptionModelController.text = 'whisper-1';
+      } else if (preset == 'Local: Balanced (Qwen 2.5 7B + Faster-Whisper)') {
         _baseUrlController.text = 'http://localhost:11434/v1';
         _apiKeyController.text = 'ollama';
         _llmModelController.text = 'qwen2.5:7b';
@@ -97,26 +121,13 @@ class _SettingsViewState extends State<SettingsView> {
         _transcriptionBaseUrlController.text = 'http://localhost:8000/v1';
         _transcriptionApiKeyController.text = '';
         _transcriptionModelController.text = 'whisper-large-v3-turbo';
-      } else if (preset == 'Cloud: Groq Free Tier (Whisper Large-v3 + Llama 3.3)') {
-        _baseUrlController.text = 'https://api.groq.com/openai/v1';
-        _apiKeyController.clear();
-        _llmModelController.text = 'llama-3.3-70b-versatile';
-        _transcriptionBaseUrlController.text = 'https://api.groq.com/openai/v1';
-        _transcriptionApiKeyController.clear();
-        _transcriptionModelController.text = 'whisper-large-v3';
-      } else if (preset == 'Cloud: OpenAI (Whisper-1 + GPT-4o-mini)') {
-        _baseUrlController.text = 'https://api.openai.com/v1';
-        _apiKeyController.clear();
-        _llmModelController.text = 'gpt-4o-mini';
-        _transcriptionBaseUrlController.text = 'https://api.openai.com/v1';
-        _transcriptionApiKeyController.clear();
-        _transcriptionModelController.text = 'whisper-1';
       }
     });
   }
 
   Future<void> _saveConfig() async {
     if (_formKey.currentState!.validate()) {
+      final isDemo = _selectedPreset == 'Offline Demo / Simulation (No Server / Zero Setup)' || _baseUrlController.text == 'demo';
       await ConfigService().saveConfig(
         openAiBaseUrl: _baseUrlController.text,
         openAiApiKey: _apiKeyController.text,
@@ -125,6 +136,7 @@ class _SettingsViewState extends State<SettingsView> {
         transcriptionApiKey: _transcriptionApiKeyController.text,
         transcriptionModel: _transcriptionModelController.text,
         libreTranslateBaseUrl: _translateUrlController.text,
+        isDemoMode: isDemo,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -135,6 +147,18 @@ class _SettingsViewState extends State<SettingsView> {
   }
 
   Future<void> _testConnection() async {
+    if (_baseUrlController.text == 'demo' || _selectedPreset == 'Offline Demo / Simulation (No Server / Zero Setup)') {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Offline Demo Mode active. No external servers or API keys required!'),
+            backgroundColor: Colors.teal,
+          ),
+        );
+      }
+      return;
+    }
+
     try {
       final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 5)));
       final response = await dio.get(
@@ -152,8 +176,16 @@ class _SettingsViewState extends State<SettingsView> {
       }
     } catch (e) {
       if (mounted) {
+        String hint = '';
+        if (_baseUrlController.text.contains('localhost')) {
+          hint = '\n(Tip: No server listening on localhost. Start Ollama or choose "Cloud: Groq Free Tier" or "Offline Demo" above.)';
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('LLM connection notice: $e (Ollama / vLLM may omit /models)')),
+          SnackBar(
+            content: Text('Connection failed: $e$hint'),
+            backgroundColor: Colors.redAccent,
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     }
@@ -190,6 +222,30 @@ class _SettingsViewState extends State<SettingsView> {
             const Text(
               'Choose between local private offline engines (Ollama / vLLM) or high-speed cloud APIs.',
               style: TextStyle(color: Colors.grey, fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            Card(
+              elevation: 0,
+              color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35),
+              child: const Padding(
+                padding: EdgeInsets.all(12.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.bolt, size: 22, color: Colors.teal),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Zero-CLI Quick Start:\n'
+                        '• Offline Demo Mode: Test all scientific features right now with zero servers or API keys.\n'
+                        '• Free Cloud (Groq): Paste your free key from console.groq.com for instant cloud STT + LLM.\n'
+                        '• Private Local AI: Start Ollama (ollama serve) and Whisper server (port 8000).',
+                        style: TextStyle(fontSize: 12.5, height: 1.4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(

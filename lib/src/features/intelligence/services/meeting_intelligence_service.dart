@@ -14,6 +14,7 @@ class AiConfig {
   final String transcriptionApiKey;
   final String transcriptionModel;
   final String llmModel;
+  final bool isDemoMode;
 
   AiConfig({
     this.openAiApiKey = '',
@@ -22,6 +23,7 @@ class AiConfig {
     String? transcriptionApiKey,
     this.transcriptionModel = 'whisper-1',
     this.llmModel = 'qwen2.5:3b',
+    this.isDemoMode = false,
   })  : transcriptionBaseUrl = transcriptionBaseUrl ?? openAiBaseUrl,
         transcriptionApiKey = transcriptionApiKey ?? openAiApiKey;
 }
@@ -61,6 +63,13 @@ class MeetingIntelligenceService {
 
   AiConfig get config => _config;
 
+  /// Check whether system is configured for offline demo/simulation mode
+  bool get isDemoMode =>
+      _config.isDemoMode ||
+      _config.openAiBaseUrl == 'demo' ||
+      _config.transcriptionBaseUrl == 'demo' ||
+      (_config.openAiApiKey.isEmpty && _config.openAiBaseUrl.contains('openai.com'));
+
   /// Client-side HIPAA Safe Harbor & clinical de-identification
   ({String scrubbedText, int redactedCount, Map<String, int> breakdown}) deidentifyText(String rawText) {
     return _phiScrubber.scrubTranscript(rawText);
@@ -78,8 +87,10 @@ class MeetingIntelligenceService {
       throw Exception('Audio file not found at: $audioFilePath');
     }
 
-    // If API key is empty and URL still points to default openai.com, use offline mock
-    if (_config.openAiApiKey.isEmpty && _config.openAiBaseUrl.contains('openai.com')) {
+    // If running in demo mode or unconfigured OpenAI, use offline mock
+    if (isDemoMode) {
+      onProgress?.call('Simulating transcription with biomedical Whisper conditioning (Demo Mode)...');
+      await Future.delayed(const Duration(milliseconds: 1200));
       return _generateMockScientificTranscript();
     }
 
@@ -184,7 +195,7 @@ class MeetingIntelligenceService {
       throw Exception('Transcript is empty. Cannot generate intelligence.');
     }
 
-    if (_config.openAiApiKey.isEmpty && _config.openAiBaseUrl.contains('openai.com')) {
+    if (isDemoMode) {
       return _generateMockScientificIntelligence(transcript);
     }
 
@@ -336,10 +347,21 @@ $effectiveContext
     required String transcript,
     required List<ChatMessage> history,
     required String question,
-  }) async {
-    if (_config.openAiApiKey.isEmpty && _config.openAiBaseUrl.contains('openai.com')) {
-      return 'Scientific Assistant (Demo Mode): Based on this session transcript, the discussion investigates '
-          'KRAS G12C and EGFR signaling pathways, experimental controls, and combination drug regimens.';
+    if (isDemoMode) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      final q = question.toLowerCase();
+      if (q.contains('kras') || q.contains('mutation') || q.contains('gene')) {
+        return 'Scientific Assistant (Demo Mode): The session reviewed data from a non-small cell lung cancer (NSCLC) cohort harboring the KRAS G12C mutation. Monotherapy with Sotorasib initially shows partial response, but acquired resistance typically emerges within 6–8 months mediated by secondary EGFR amplification and MET bypass activation.';
+      } else if (q.contains('action') || q.contains('task') || q.contains('todo') || q.contains('next')) {
+        return 'Scientific Assistant (Demo Mode): Lab Action Items from this session:\n'
+            '• Dr. Chen: Run Western Blot validation on cell lysates by Thursday before next passaging.\n'
+            '• Priya: Finalize PDX (Patient-Derived Xenograft) RNA-Seq library preparation by Friday.\n'
+            '• Elena: Submit procurement order for Cisplatin, Doxorubicin, and anti-PD-L1 antibodies.\n'
+            '• Dr. Marcus: Compile combination index curves and submit translational abstract to AACR next week.';
+      } else if (q.contains('drug') || q.contains('compound') || q.contains('treatment') || q.contains('osimertinib') || q.contains('sotorasib')) {
+        return 'Scientific Assistant (Demo Mode): The team tested combining Sotorasib (100 nM) with Osimertinib in H23 cell line viability assays. Dual blockade synergistically suppressed phospho-ERK and phospho-AKT signaling with high statistical significance (p < 0.001).';
+      }
+      return 'Scientific Assistant (Demo Mode): Based on the recorded lab session transcript, the team is investigating KRAS G12C resistance mechanisms, dual EGFR/MET pathway blockade, Western blot validation protocols, and upcoming PDX RNA-Seq studies.';
     }
 
     final messages = <Map<String, String>>[

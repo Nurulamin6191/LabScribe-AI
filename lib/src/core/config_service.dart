@@ -15,6 +15,7 @@ class ConfigService {
   String transcriptionApiKey = '';
   String transcriptionModel = 'whisper-large-v3-turbo';
   String libreTranslateBaseUrl = 'http://localhost:5000';
+  bool isDemoMode = false;
 
   Future<void> loadConfig() async {
     _prefs = await SharedPreferences.getInstance();
@@ -25,6 +26,7 @@ class ConfigService {
     transcriptionApiKey = _prefs.getString('transcriptionApiKey') ?? openAiApiKey;
     transcriptionModel = _prefs.getString('transcriptionModel') ?? 'whisper-large-v3-turbo';
     libreTranslateBaseUrl = _prefs.getString('libreTranslateBaseUrl') ?? 'http://localhost:5000';
+    isDemoMode = _prefs.getBool('isDemoMode') ?? false;
   }
 
   Future<void> saveConfig({
@@ -35,6 +37,7 @@ class ConfigService {
     String? transcriptionApiKey,
     required String transcriptionModel,
     required String libreTranslateBaseUrl,
+    bool isDemoMode = false,
   }) async {
     this.openAiBaseUrl = openAiBaseUrl;
     this.openAiApiKey = openAiApiKey;
@@ -43,6 +46,7 @@ class ConfigService {
     this.transcriptionApiKey = transcriptionApiKey ?? openAiApiKey;
     this.transcriptionModel = transcriptionModel;
     this.libreTranslateBaseUrl = libreTranslateBaseUrl;
+    this.isDemoMode = isDemoMode;
 
     await _prefs.setString('openAiBaseUrl', this.openAiBaseUrl);
     await _prefs.setString('openAiApiKey', this.openAiApiKey);
@@ -51,6 +55,7 @@ class ConfigService {
     await _prefs.setString('transcriptionApiKey', this.transcriptionApiKey);
     await _prefs.setString('transcriptionModel', this.transcriptionModel);
     await _prefs.setString('libreTranslateBaseUrl', this.libreTranslateBaseUrl);
+    await _prefs.setBool('isDemoMode', this.isDemoMode);
   }
 
   AiConfig getAiConfig() {
@@ -61,6 +66,7 @@ class ConfigService {
       transcriptionApiKey: transcriptionApiKey,
       transcriptionModel: transcriptionModel,
       llmModel: llmModel,
+      isDemoMode: isDemoMode || openAiBaseUrl == 'demo' || transcriptionBaseUrl == 'demo',
     );
   }
 }

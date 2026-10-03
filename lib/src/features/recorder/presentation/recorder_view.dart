@@ -8,6 +8,7 @@ import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:uuid/uuid.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:dio/dio.dart';
 
 import '../../../core/session_repository.dart';
 import '../../../core/crypto_utils.dart';
@@ -909,8 +910,129 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         _processingStage = ProcessingStage.error;
         _statusMessage = 'Error during AI pipeline: $e';
       });
-      _showSnackBar('Pipeline error: $e');
+      if (_isConnectionError(e)) {
+        _showAiConnectionErrorDialog(e);
+      } else {
+        _showSnackBar('Pipeline error: $e');
+      }
     }
+  }
+
+  bool _isConnectionError(dynamic e) {
+    if (e is DioException) {
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.connectionTimeout ||
+          e.error is SocketException) {
+        return true;
+      }
+    }
+    final str = e.toString().toLowerCase();
+    return str.contains('connection refused') ||
+        str.contains('socketexception') ||
+        str.contains('failed host lookup') ||
+        str.contains('network is unreachable') ||
+        str.contains('errno = 111');
+  }
+
+  Future<void> _showAiConnectionErrorDialog(dynamic error) async {
+    if (!mounted) return;
+
+    final config = widget.intelligenceService.config;
+    final isLocalhost = config.transcriptionBaseUrl.contains('localhost') || config.openAiBaseUrl.contains('localhost');
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.wifi_off, color: Colors.amber),
+            SizedBox(width: 10),
+            Text('Cannot Connect to AI Engine', style: TextStyle(fontSize: 18)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isLocalhost
+                    ? 'LabScribe could not connect to your local AI engine on localhost.'
+                    : 'LabScribe could not connect to the configured AI endpoint.',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('STT Endpoint: ${config.transcriptionBaseUrl}', style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                    Text('LLM Endpoint: ${config.openAiBaseUrl}', style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                    const SizedBox(height: 4),
+                    const Text('Status: Connection Refused (No server listening)', style: TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'How would you like to proceed?',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '1. Free Cloud (Zero CLI): Select "Cloud: Groq Free Tier" in Settings and paste a free key from console.groq.com.\n'
+                '2. Offline Demo Mode: Test all scientific features right now with simulated data (no setup needed).\n'
+                '3. Local Server: Start Ollama (ollama serve) and Whisper on port 8000 on your machine.',
+                style: TextStyle(fontSize: 12.5, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Dismiss'),
+          ),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.play_circle_outline, size: 18),
+            label: const Text('Try Demo Mode'),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await ConfigService().saveConfig(
+                openAiBaseUrl: 'demo',
+                openAiApiKey: 'demo',
+                llmModel: 'demo-scientific-ai',
+                transcriptionBaseUrl: 'demo',
+                transcriptionApiKey: 'demo',
+                transcriptionModel: 'demo-whisper',
+                libreTranslateBaseUrl: ConfigService().libreTranslateBaseUrl,
+                isDemoMode: true,
+              );
+              widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
+              _executeAiPipeline();
+            },
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.settings, size: 18),
+            label: const Text('Open Settings'),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsView()),
+              );
+              widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _sendChatMessage() async {
@@ -956,7 +1078,25 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       setState(() {
         _isWaitingForAiChatResponse = false;
       });
-      _showSnackBar('Chat error: $e');
+      if (_isConnectionError(e)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Cannot connect to AI engine. Check Settings or use Demo Mode.'),
+            action: SnackBarAction(
+              label: 'Settings',
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SettingsView()),
+                );
+                widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
+              },
+            ),
+          ),
+        );
+      } else {
+        _showSnackBar('Chat error: $e');
+      }
     }
   }
 
