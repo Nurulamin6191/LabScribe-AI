@@ -105,13 +105,25 @@ class MeetingIntelligenceService {
       return _generateMockScientificTranscript();
     }
 
-    const scientificContextPrompt = 
-        'Scientific research seminar, oncology tumor board, and biomedical lab meeting. '
-        'Terms: gene symbols (KRAS G12C, TP53, BRCA1/2, EGFR, HER2, BRAF V600E, PD-L1), '
-        'oncology drugs (cisplatin, osimertinib, doxorubicin, paclitaxel, pembrolizumab, sotorasib), '
-        'experimental assays (Western blot, flow cytometry, qPCR, RNA-Seq, ChIP-seq, immunohistochemistry, CRISPR-Cas9), '
-        'and statistics (p-value, hazard ratio, Kaplan-Meier, 95% CI). '
-        'Transcribe scientific and code-mixed terminology accurately with standard scientific casing.';
+    final String scientificContextPrompt;
+    if (languageHint == 'hi' || languageHint == 'hinglish') {
+      scientificContextPrompt = 
+          'वैज्ञानिक शोध संगोष्ठी, ऑन्कोलॉजी लैब मीटिंग, जैव चिकित्सा अनुसंधान और क्लीनिकल सेमिनार. '
+          'Scientific research seminar, oncology tumor board, and biomedical lab meeting in Hindi, English, and Hinglish. '
+          'Terms: जीन (KRAS G12C, TP53, BRCA1/2, EGFR, HER2, BRAF V600E, PD-L1), '
+          'औषधियां (cisplatin, osimertinib, doxorubicin, paclitaxel, pembrolizumab, sotorasib), '
+          'प्रयोग और परख (Western blot, flow cytometry, qPCR, RNA-Seq, ChIP-seq, immunohistochemistry, CRISPR-Cas9), '
+          'सांख्यिकी (p-value, hazard ratio, Kaplan-Meier, 95% CI, IC50, viability). '
+          'Transcribe scientific and code-mixed Hindi-English terminology accurately with proper casing and Devanagari/English script.';
+    } else {
+      scientificContextPrompt = 
+          'Scientific research seminar, oncology tumor board, and biomedical lab meeting. '
+          'Terms: gene symbols (KRAS G12C, TP53, BRCA1/2, EGFR, HER2, BRAF V600E, PD-L1), '
+          'oncology drugs (cisplatin, osimertinib, doxorubicin, paclitaxel, pembrolizumab, sotorasib), '
+          'experimental assays (Western blot, flow cytometry, qPCR, RNA-Seq, ChIP-seq, immunohistochemistry, CRISPR-Cas9), '
+          'and statistics (p-value, hazard ratio, Kaplan-Meier, 95% CI). '
+          'Transcribe scientific and code-mixed terminology accurately with standard scientific casing.';
+    }
 
     try {
       // Check if audio file exceeds the 24 MB API limit
@@ -447,6 +459,63 @@ $transcript
     } catch (e) {
       return _generateLocalScientificAnswer(transcript, question);
     }
+  }
+
+  /// High-accuracy scientific translation preserving biomedical nomenclature and casing
+  Future<String> translateScientificText({
+    required String text,
+    required String targetLanguage, // 'Hindi' or 'English'
+  }) async {
+    if (text.trim().isEmpty) return '';
+
+    if (isLlmDemoMode) {
+      if (targetLanguage.toLowerCase().contains('hi')) {
+        return 'हिन्दी अनुवाद (वैज्ञानिक सारांश):\n\n'
+            'डॉ. चेन: आज की ट्रांसलेशनल ऑन्कोलॉजी शोध बैठक में आप सभी का स्वागत है। '
+            'आज हम नॉन-स्मॉल सेल लंग कैंसर (NSCLC) में KRAS G12C इनहिबिटर प्रतिरोध तंत्र पर हमारे अध्ययनों की समीक्षा कर रहे हैं। '
+            'प्रिया और मार्कस ने H23 सेल लाइन पर सोटोरासिब (Sotorasib) और ओसिमर्टिनिब (Osimertinib) के संयोजन के साथ नए इन विट्रो डेटा पूरे किए हैं। '
+            'फॉस्फो-ERK और फॉस्फो-AKT सिग्नलिंग में महत्वपूर्ण गिरावट देखी गई (p < 0.001)।';
+      } else {
+        return text;
+      }
+    }
+
+    try {
+      final cleanBaseUrl = _config.openAiBaseUrl.replaceAll(RegExp(r'/+$'), '');
+      final response = await _dio.post(
+        '$cleanBaseUrl/chat/completions',
+        data: {
+          'model': _config.llmModel,
+          'temperature': 0.1,
+          'messages': [
+            {
+              'role': 'system',
+              'content': 'You are an expert scientific biomedical translator. '
+                  'Translate the following research text accurately into $targetLanguage. '
+                  'Preserve uppercase capitalization for gene symbols (e.g. KRAS G12C, TP53, EGFR), '
+                  'standard casing for drug names (e.g. cisplatin, sotorasib, osimertinib), '
+                  'assays (Western blot, qPCR, RNA-Seq), and statistical values (p < 0.05, hazard ratio). '
+                  'Output only the translated text.'
+            },
+            {'role': 'user', 'content': text},
+          ],
+        },
+        options: Options(
+          headers: {
+            if (_config.openAiApiKey.isNotEmpty)
+              'Authorization': 'Bearer ${_config.openAiApiKey}',
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data['choices'][0]['message']['content'] ?? text;
+      }
+    } catch (_) {}
+
+    final targetCode = targetLanguage.toLowerCase().contains('hi') ? 'hi' : 'en';
+    return await _publicApiService.translateText(text: text, targetLang: targetCode);
   }
 
   String _generateLocalScientificAnswer(String transcript, String question) {

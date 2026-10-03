@@ -152,6 +152,16 @@ class ExportService {
     await Share.shareXFiles([XFile(file.path)], text: 'Exported scientific notes: ${session.title}');
   }
 
+  /// Export clean raw transcript as a text file (.txt)
+  Future<void> exportTranscriptAsPlainText(MeetingSession session) async {
+    final dir = await getTemporaryDirectory();
+    final safeTitle = session.title.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(RegExp(r'\s+'), '_');
+    final file = File('${dir.path}/${safeTitle}_transcript.txt');
+    await file.writeAsString(session.transcript);
+
+    await Share.shareXFiles([XFile(file.path)], text: 'Session Transcript: ${session.title}');
+  }
+
   /// Export citations as BibTeX (.bib) file for Zotero and reference managers
   Future<void> exportSessionAsBibTeX(MeetingSession session) async {
     final bibtex = generateBibTeXString(session);

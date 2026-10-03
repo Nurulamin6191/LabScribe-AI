@@ -84,6 +84,18 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   bool _isWaitingForAiChatResponse = false;
   bool _isMeetingCompactMode = false;
 
+  // Language & Multilingual Optimization (Hindi, English, Hinglish)
+  String _selectedLanguage = 'auto'; // 'auto', 'en', 'hi', 'hinglish'
+  String? _translatedTranscript;
+  bool _isTranslatingTranscript = false;
+  bool _isTranscriptEditMode = false;
+  final TextEditingController _transcriptEditController = TextEditingController();
+  bool _showTranslatedTranscript = false;
+  int _scienceSubTabIndex = 0;
+  bool _isTranslatingSummary = false;
+  String? _translatedSummary;
+  bool _showTranslatedSummary = false;
+
   void loadSession(MeetingSession session) {
     setState(() {
       _currentSession = session;
@@ -96,6 +108,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _isVirtualCallMode = session.isVirtualCall;
       _searchResultsPubChem.clear();
       _searchResultsPubMed.clear();
+      _translatedTranscript = null;
+      _showTranslatedTranscript = false;
+      _isTranscriptEditMode = false;
+      _transcriptEditController.text = session.transcript;
+      _translatedSummary = null;
+      _showTranslatedSummary = false;
     });
   }
 
@@ -130,8 +148,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       }
     });
 
-    // 6 Dashboards: Summary, Protocols, Speakers & Dialog, PubChem Glossary, PubMed Citations, Q&A
-    _tabController = TabController(length: 6, vsync: this);
+    // 7 Dashboards: Summary, Transcript, Protocols, Speakers & Dialog, PubChem Glossary, PubMed Citations, Q&A
+    _tabController = TabController(length: 7, vsync: this);
 
     // Enumerate connected microphones (Jabra, USB, AirPods, built-in)
     _loadAudioDevices();
@@ -147,6 +165,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     _chatScrollController.dispose();
     _pubchemSearchController.dispose();
     _pubmedSearchController.dispose();
+    _transcriptEditController.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -852,8 +871,14 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       });
 
       // 1. Transcription (handles automatic chunking if > 24 MB)
+      String? langHint;
+      if (_selectedLanguage == 'en') langHint = 'en';
+      if (_selectedLanguage == 'hi') langHint = 'hi';
+      if (_selectedLanguage == 'hinglish') langHint = 'hinglish';
+
       String transcript = await widget.intelligenceService.transcribeAudio(
         audioFilePath: _currentSession?.audioPath ?? _recordedAudioPath!,
+        languageHint: langHint,
         onProgress: (status) {
           setState(() {
             _statusMessage = status;
@@ -876,6 +901,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
       setState(() {
         _currentSession?.transcript = transcript;
+        _transcriptEditController.text = transcript;
+        _translatedTranscript = null;
+        _showTranslatedTranscript = false;
         _processingStage = ProcessingStage.summarizing;
         _statusMessage = 'Stage 3/4: Synthesizing hypotheses, PubChem compounds & PubMed citations...';
       });
@@ -916,6 +944,400 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         _showSnackBar('Pipeline error: $e');
       }
     }
+  }
+
+  /// Process scientific intelligence directly from pasted text or lecture notes
+  Future<void> _processTextDirectly(String textToProcess) async {
+    final clean = textToProcess.trim();
+    if (clean.isEmpty) {
+      _showSnackBar('Please enter or paste transcript text to analyze.');
+      return;
+    }
+
+    try {
+      setState(() {
+        _processingStage = ProcessingStage.summarizing;
+        _statusMessage = 'Analyzing scientific text & generating intelligence...';
+      });
+
+      String effectiveText = clean;
+      if (_enableClinicalDeIdentification) {
+        final scrubResult = widget.intelligenceService.deidentifyText(effectiveText);
+        effectiveText = scrubResult.scrubbedText;
+        _redactedTokensCount = scrubResult.redactedCount;
+      }
+
+      if (_currentSession == null) {
+        _currentSession = MeetingSession(
+          title: _titleController.text.trim().isEmpty ? 'Scientific Analysis' : _titleController.text.trim(),
+          audioPath: '',
+          durationSeconds: (effectiveText.split(RegExp(r'\s+')).length / 2.5).round(),
+          isDeIdentified: _enableClinicalDeIdentification,
+        );
+      }
+
+      _currentSession!.transcript = effectiveText;
+      _transcriptEditController.text = effectiveText;
+
+      final intelligence = await widget.intelligenceService.processSessionIntelligence(
+        transcript: effectiveText,
+        sessionTitle: _currentSession!.title,
+      );
+
+      final transcriptHash = CryptoUtils.sha256String(effectiveText);
+
+      setState(() {
+        _processingStage = ProcessingStage.completed;
+        _statusMessage = 'AI Intelligence Generated & Sealed!';
+        _currentSession?.summary = intelligence.summary;
+        _currentSession?.actionItems = intelligence.actionItems;
+        _currentSession?.glossaryTerms = intelligence.glossary;
+        _currentSession?.citations = intelligence.citations;
+        _currentSession?.speakerTurns = intelligence.speakerTurns;
+        _currentSession?.transcriptSha256 = transcriptHash;
+        _isTranscriptEditMode = false;
+        _translatedTranscript = null;
+        _showTranslatedTranscript = false;
+      });
+
+      await SessionRepository().saveSession(_currentSession!);
+      _showSnackBar('Analysis complete from text (21 CFR Part 11 sealed).');
+    } catch (e) {
+      setState(() {
+        _processingStage = ProcessingStage.error;
+        _statusMessage = 'Error during text analysis: $e';
+      });
+      _showSnackBar('Error analyzing text: $e');
+    }
+  }
+
+  void _copyTranscriptToClipboard() {
+    final text = (_showTranslatedTranscript && _translatedTranscript != null)
+        ? _translatedTranscript!
+        : (_currentSession?.transcript ?? '');
+    if (text.isEmpty) {
+      _showSnackBar('No transcript text to copy.');
+      return;
+    }
+    Clipboard.setData(ClipboardData(text: text));
+    _showSnackBar('Transcript copied to clipboard!');
+  }
+
+  void _showSaveTranscriptMenu() {
+    if (_currentSession == null || _currentSession!.transcript.isEmpty) {
+      _showSnackBar('No transcript to save yet. Record or paste text first.');
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.save_alt, color: Colors.teal),
+                const SizedBox(width: 10),
+                Text(
+                  'Save / Export Transcript',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Icon(Icons.description, color: Colors.blue),
+              title: const Text('Save as Plain Text (.txt)'),
+              subtitle: const Text('Clean raw transcript file for sharing or archiving'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await ExportService().exportTranscriptAsPlainText(_currentSession!);
+                _showSnackBar('Transcript saved as plain text (.txt)!');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.article, color: Colors.deepPurple),
+              title: const Text('Save as Lab Markdown (.md)'),
+              subtitle: const Text('Formatted lab record with 21 CFR Part 11 cryptographic seal'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await ExportService().exportSessionAsMarkdown(_currentSession!);
+                _showSnackBar('Exported as scientific Markdown (.md)!');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy, color: Colors.teal),
+              title: const Text('Copy to Clipboard'),
+              subtitle: const Text('Quick paste into Slack, WhatsApp, or email'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _copyTranscriptToClipboard();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _toggleEditTranscript() {
+    setState(() {
+      _isTranscriptEditMode = !_isTranscriptEditMode;
+      if (_isTranscriptEditMode) {
+        _transcriptEditController.text = _currentSession?.transcript ?? '';
+      }
+    });
+  }
+
+  Future<void> _saveEditedTranscript() async {
+    final text = _transcriptEditController.text.trim();
+    if (text.isEmpty) {
+      _showSnackBar('Transcript cannot be empty.');
+      return;
+    }
+    if (_currentSession == null) {
+      _currentSession = MeetingSession(
+        title: _titleController.text.trim().isEmpty ? 'Scientific Session' : _titleController.text.trim(),
+        audioPath: _recordedAudioPath ?? '',
+        durationSeconds: _recordDurationSeconds,
+      );
+    }
+    final hash = CryptoUtils.sha256String(text);
+    setState(() {
+      _currentSession!.transcript = text;
+      _currentSession!.transcriptSha256 = hash;
+      _isTranscriptEditMode = false;
+      _translatedTranscript = null;
+      _showTranslatedTranscript = false;
+    });
+    await SessionRepository().saveSession(_currentSession!);
+    _showSnackBar('Transcript updated and 21 CFR Part 11 re-sealed!');
+  }
+
+  Future<void> _toggleTranslateTranscript() async {
+    if (_currentSession == null || _currentSession!.transcript.isEmpty) {
+      _showSnackBar('No transcript to translate.');
+      return;
+    }
+
+    if (_translatedTranscript != null) {
+      setState(() {
+        _showTranslatedTranscript = !_showTranslatedTranscript;
+      });
+      return;
+    }
+
+    setState(() {
+      _isTranslatingTranscript = true;
+    });
+
+    try {
+      final target = _selectedLanguage == 'hi' ? 'English' : 'Hindi';
+      final translated = await widget.intelligenceService.translateScientificText(
+        text: _currentSession!.transcript,
+        targetLanguage: target,
+      );
+
+      setState(() {
+        _translatedTranscript = translated;
+        _showTranslatedTranscript = true;
+        _isTranslatingTranscript = false;
+      });
+      _showSnackBar(target == 'Hindi' ? 'प्रतिलेख का हिन्दी अनुवाद तैयार है!' : 'Translated to English!');
+    } catch (e) {
+      setState(() {
+        _isTranslatingTranscript = false;
+      });
+      _showSnackBar('Translation failed: $e');
+    }
+  }
+
+  void _showPasteTranscriptDialog() {
+    final pasteController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.paste, color: Colors.teal),
+            SizedBox(width: 10),
+            Text('Paste Transcript / Notes', style: TextStyle(fontSize: 18)),
+          ],
+        ),
+        content: SizedBox(
+          width: 520,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Paste meeting notes, a scientific lecture transcript, or lab discussion text below to run the AI intelligence pipeline directly:',
+                style: TextStyle(fontSize: 12.5, color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: pasteController,
+                maxLines: 8,
+                decoration: const InputDecoration(
+                  hintText: 'e.g. Dr. Chen: Today we tested Cisplatin on H23 cell line...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              final text = pasteController.text.trim();
+              Navigator.pop(ctx);
+              if (text.isNotEmpty) {
+                _processTextDirectly(text);
+              }
+            },
+            icon: const Icon(Icons.auto_awesome, size: 16),
+            label: const Text('Analyze with AI'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleTranslateSummary() async {
+    final execSummary = _currentSession?.summary?.executiveSummary;
+    if (execSummary == null || execSummary.isEmpty) return;
+
+    if (_translatedSummary != null) {
+      setState(() {
+        _showTranslatedSummary = !_showTranslatedSummary;
+      });
+      return;
+    }
+
+    setState(() {
+      _isTranslatingSummary = true;
+    });
+
+    try {
+      final translated = await widget.intelligenceService.translateScientificText(
+        text: execSummary,
+        targetLanguage: 'Hindi',
+      );
+      setState(() {
+        _translatedSummary = translated;
+        _showTranslatedSummary = true;
+        _isTranslatingSummary = false;
+      });
+      _showSnackBar('सारांश का हिन्दी अनुवाद तैयार है!');
+    } catch (e) {
+      setState(() {
+        _isTranslatingSummary = false;
+      });
+      _showSnackBar('Translation failed: $e');
+    }
+  }
+
+  Widget _buildLanguageSelector(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.6)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.language, size: 18, color: Colors.teal),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Language / भाषा', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                Text('Whisper & AI tuning', style: TextStyle(color: Colors.grey, fontSize: 10)),
+              ],
+            ),
+          ),
+          DropdownButton<String>(
+            value: _selectedLanguage,
+            underline: const SizedBox(),
+            isDense: true,
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5, color: theme.colorScheme.onSurface),
+            items: const [
+              DropdownMenuItem(value: 'auto', child: Text('🌐 Auto')),
+              DropdownMenuItem(value: 'en', child: Text('🇬🇧 English')),
+              DropdownMenuItem(value: 'hi', child: Text('🇮🇳 हिन्दी (Hindi)')),
+              DropdownMenuItem(value: 'hinglish', child: Text('🇮🇳 Hinglish')),
+            ],
+            onChanged: (val) {
+              if (val != null) {
+                setState(() {
+                  _selectedLanguage = val;
+                });
+                _showSnackBar(
+                  val == 'hi'
+                      ? 'हिन्दी भाषा अनुकूलित (Hindi biomedical optimization active)'
+                      : (val == 'hinglish' ? 'Hinglish code-mixed biomedical optimization active' : 'Language set to ${val.toUpperCase()}'),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScienceMobile(ThemeData theme) {
+    return Column(
+      children: [
+        Container(
+          color: theme.colorScheme.surface,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: SegmentedButton<int>(
+                  segments: [
+                    ButtonSegment(
+                      value: 0,
+                      icon: const Icon(Icons.medication_liquid, size: 16),
+                      label: Text('PubChem (${_currentSession?.glossaryTerms.length ?? 0})'),
+                    ),
+                    ButtonSegment(
+                      value: 1,
+                      icon: const Icon(Icons.library_books, size: 16),
+                      label: Text('PubMed (${_currentSession?.citations.length ?? 0})'),
+                    ),
+                  ],
+                  selected: {_scienceSubTabIndex},
+                  onSelectionChanged: (set) {
+                    setState(() {
+                      _scienceSubTabIndex = set.first;
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: _scienceSubTabIndex == 0
+              ? _buildGlossaryTab(theme)
+              : _buildCitationsTab(theme),
+        ),
+      ],
+    );
   }
 
   bool _isConnectionError(dynamic e) {
@@ -1287,6 +1709,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   isScrollable: true,
                   tabs: const [
                     Tab(icon: Icon(Icons.science), text: 'Scientific Summary'),
+                    Tab(icon: Icon(Icons.description), text: 'Full Transcript'),
                     Tab(icon: Icon(Icons.assignment_turned_in), text: 'Protocols & Tasks'),
                     Tab(icon: Icon(Icons.record_voice_over), text: 'Speakers & Dialog'),
                     Tab(icon: Icon(Icons.medication_liquid), text: 'Bio/Chem (PubChem)'),
@@ -1306,12 +1729,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   });
                 },
                 destinations: const [
-                  NavigationDestination(icon: Icon(Icons.mic), label: 'Deck'),
+                  NavigationDestination(icon: Icon(Icons.mic), label: 'Record'),
+                  NavigationDestination(icon: Icon(Icons.description), label: 'Transcript'),
                   NavigationDestination(icon: Icon(Icons.science), label: 'Summary'),
-                  NavigationDestination(icon: Icon(Icons.assignment_turned_in), label: 'Protocols'),
-                  NavigationDestination(icon: Icon(Icons.record_voice_over), label: 'Speakers'),
-                  NavigationDestination(icon: Icon(Icons.medication_liquid), label: 'PubChem'),
-                  NavigationDestination(icon: Icon(Icons.library_books), label: 'PubMed'),
+                  NavigationDestination(icon: Icon(Icons.biotech), label: 'Science'),
                   NavigationDestination(icon: Icon(Icons.forum), label: 'Q&A'),
                 ],
               )
@@ -1337,7 +1758,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       return Row(
         children: [
           SizedBox(
-            width: 370,
+            width: 380,
             child: SingleChildScrollView(
               child: _buildRecordingControlPanel(theme),
             ),
@@ -1348,6 +1769,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               controller: _tabController,
               children: [
                 _buildSummaryTab(theme),
+                _buildTranscriptTab(theme),
                 _buildTasksTab(theme),
                 _buildSpeakersTab(theme),
                 _buildGlossaryTab(theme),
@@ -1364,16 +1786,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       case 0:
         return SingleChildScrollView(child: _buildRecordingControlPanel(theme));
       case 1:
-        return _buildSummaryTab(theme);
+        return _buildTranscriptTab(theme);
       case 2:
-        return _buildTasksTab(theme);
+        return _buildSummaryTab(theme);
       case 3:
-        return _buildSpeakersTab(theme);
+        return _buildScienceMobile(theme);
       case 4:
-        return _buildGlossaryTab(theme);
-      case 5:
-        return _buildCitationsTab(theme);
-      case 6:
         return _buildChatTab(theme);
       default:
         return SingleChildScrollView(child: _buildRecordingControlPanel(theme));
@@ -1464,11 +1882,17 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
             // Microphone Selector
             _buildAudioDeviceSelector(theme),
+            const SizedBox(height: 10),
+
+            // Multilingual Hindi/English Optimization Selector
+            _buildLanguageSelector(theme),
             const SizedBox(height: 14),
 
             // Primary Audio Action Controls
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
               children: [
                 if (_recordingState == RecordingState.idle || _recordingState == RecordingState.stopped) ...[
                   ElevatedButton.icon(
@@ -1478,13 +1902,18 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.redAccent,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     ),
                   ),
                   OutlinedButton.icon(
                     onPressed: _importAudioFileDialog,
                     icon: const Icon(Icons.file_upload_outlined, size: 16),
                     label: const Text('Import Audio'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _showPasteTranscriptDialog,
+                    icon: const Icon(Icons.paste, size: 16),
+                    label: const Text('Paste Text'),
                   ),
                 ],
                 if (_recordingState == RecordingState.recording) ...[
@@ -1713,6 +2142,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
           // Audio Input Device Selector
           _buildAudioDeviceSelector(theme),
+          const SizedBox(height: 10),
+
+          // Multilingual Hindi/English Optimization Selector
+          _buildLanguageSelector(theme),
           const SizedBox(height: 14),
 
           // Timer Display with Pulsing Audio Activity
@@ -1770,8 +2203,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           const SizedBox(height: 14),
 
           // Control Buttons
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
             children: [
               if (_recordingState == RecordingState.idle || _recordingState == RecordingState.stopped) ...[
                 ElevatedButton.icon(
@@ -1781,13 +2216,18 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.redAccent,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
                 ),
                 OutlinedButton.icon(
                   onPressed: _importAudioFileDialog,
                   icon: const Icon(Icons.file_upload_outlined, size: 16),
                   label: const Text('Import Audio'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _showPasteTranscriptDialog,
+                  icon: const Icon(Icons.paste, size: 16),
+                  label: const Text('Paste Text'),
                 ),
               ],
               if (_recordingState == RecordingState.recording) ...[
@@ -2062,6 +2502,234 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
+  // --- Intelligence Tab: Full Transcript & Multilingual Editor ---
+
+  Widget _buildTranscriptTab(ThemeData theme) {
+    final transcript = _currentSession?.transcript ?? '';
+
+    if (transcript.isEmpty) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: theme.colorScheme.outlineVariant),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.description_outlined, size: 52, color: theme.colorScheme.primary),
+                    const SizedBox(height: 14),
+                    Text(
+                      'No Transcript Available Yet',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Record audio using the recording deck, import an existing audio file, or paste your meeting notes below to analyze with AI.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: Colors.grey, height: 1.4),
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: _showPasteTranscriptDialog,
+                      icon: const Icon(Icons.paste),
+                      label: const Text('Paste Text / Notes to Analyze'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final wordCount = transcript.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+    final estimatedMin = (wordCount / 140).toStringAsFixed(1);
+    final displayedText = (_showTranslatedTranscript && _translatedTranscript != null)
+        ? _translatedTranscript!
+        : transcript;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Action Toolbar
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Session Transcript',
+                        style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 8),
+                      Chip(
+                        label: Text('$wordCount words • ~$estimatedMin min read'),
+                        backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                        visualDensity: VisualDensity.compact,
+                        labelStyle: const TextStyle(fontSize: 11),
+                        side: BorderSide.none,
+                      ),
+                    ],
+                  ),
+                  if (_currentSession?.transcriptSha256 != null)
+                    Text(
+                      'SHA-256: ${_currentSession!.transcriptSha256!.substring(0, 16)}... (21 CFR Part 11 Sealed)',
+                      style: TextStyle(fontSize: 11, color: Colors.indigo.shade400, fontFamily: 'monospace'),
+                    ),
+                ],
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _copyTranscriptToClipboard,
+                    icon: const Icon(Icons.copy, size: 16),
+                    label: const Text('Copy'),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: _showSaveTranscriptMenu,
+                    icon: const Icon(Icons.save_alt, size: 16),
+                    label: const Text('Save Transcript'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _toggleEditTranscript,
+                    icon: Icon(_isTranscriptEditMode ? Icons.visibility : Icons.edit_note, size: 16),
+                    label: Text(_isTranscriptEditMode ? 'View' : 'Edit / Paste'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: _isTranslatingTranscript ? null : _toggleTranslateTranscript,
+                    icon: _isTranslatingTranscript
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.translate, size: 16),
+                    label: Text(_showTranslatedTranscript ? 'View Original' : 'Translate (हिन्दी)'),
+                    style: FilledButton.styleFrom(backgroundColor: Colors.teal),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Translation Indicator Banner
+          if (_showTranslatedTranscript && _translatedTranscript != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.teal.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.teal.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.g_translate, color: Colors.teal, size: 18),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'प्रदर्शित: वैज्ञानिक प्रतिलेख का हिन्दी अनुवाद (Viewing Hindi Biomedical Translation)',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.teal),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() => _showTranslatedTranscript = false),
+                    child: const Text('Switch to Original (EN)', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ),
+            ),
+
+          // Transcript Content (Editor vs Formatted View)
+          if (_isTranscriptEditMode) ...[
+            Card(
+              elevation: 1,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text('Edit Transcript Text:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _transcriptEditController,
+                      maxLines: 14,
+                      style: const TextStyle(fontSize: 14, height: 1.5, fontFamily: 'monospace'),
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        hintText: 'Paste or edit transcript here...',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => setState(() => _isTranscriptEditMode = false),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          onPressed: _saveEditedTranscript,
+                          icon: const Icon(Icons.check, size: 16),
+                          label: const Text('Save & Re-Seal'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.tonalIcon(
+                          onPressed: () => _processTextDirectly(_transcriptEditController.text),
+                          icon: const Icon(Icons.auto_awesome, size: 16),
+                          label: const Text('Save & Run AI Analysis'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ] else ...[
+            Card(
+              elevation: 0,
+              color: theme.colorScheme.surfaceContainerLow,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: SelectableText(
+                  displayedText,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    height: 1.7,
+                    letterSpacing: 0.2,
+                    fontSize: 14.5,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   // --- Intelligence Tab 1: Scientific Summary ---
 
   Widget _buildSummaryTab(ThemeData theme) {
@@ -2078,10 +2746,27 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Scientific Executive Summary', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-              Chip(
-                label: Text(summary.detectedLanguage),
-                backgroundColor: theme.colorScheme.primaryContainer,
+              Expanded(
+                child: Text('Scientific Executive Summary', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _isTranslatingSummary ? null : _toggleTranslateSummary,
+                    icon: _isTranslatingSummary
+                        ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.translate, size: 14),
+                    label: Text(_showTranslatedSummary ? 'English' : 'हिन्दी (Hindi)'),
+                    style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                  ),
+                  const SizedBox(width: 8),
+                  Chip(
+                    label: Text(summary.detectedLanguage),
+                    backgroundColor: theme.colorScheme.primaryContainer,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
               ),
             ],
           ),
