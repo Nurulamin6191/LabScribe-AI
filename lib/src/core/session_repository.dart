@@ -182,6 +182,12 @@ class SessionRepository {
       speakerTurns = jsonList.map((e) => SpeakerTurn.fromJson(e)).toList();
     }
 
+    List<MeetingNote> liveNotes = [];
+    if (map['liveNotesJson'] != null) {
+      final List<dynamic> jsonList = jsonDecode(map['liveNotesJson']);
+      liveNotes = jsonList.map((e) => MeetingNote.fromJson(e)).toList();
+    }
+
     return MeetingSession(
       id: map['id'],
       title: map['title'],
