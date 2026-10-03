@@ -37,7 +37,7 @@ EOF
 # Copy binaries and bundle assets
 echo "=== Copying Flutter Bundle Files ==="
 cp -r "$BUNDLE_DIR/"* "$DEB_DIR/usr/lib/$APP_NAME/"
-ln -sf "/usr/lib/$APP_NAME/$APP_NAME" "$DEB_DIR/usr/bin/$APP_NAME"
+ln -sf "../lib/$APP_NAME/$APP_NAME" "$DEB_DIR/usr/bin/$APP_NAME"
 
 # Copy Desktop integration files
 cp packaging/linux/labscribe.desktop "$DEB_DIR/usr/share/applications/"
@@ -47,7 +47,7 @@ fi
 
 # Set permissions
 chmod 755 "$DEB_DIR/DEBIAN"
-chmod 755 "$DEB_DIR/usr/bin/$APP_NAME"
+chmod 755 "$DEB_DIR/usr/lib/$APP_NAME/$APP_NAME"
 
 echo "=== Building Debian Binary Package ==="
 dpkg-deb --build --root-owner-group "$DEB_DIR" "${APP_NAME}_${VERSION}_${ARCH}.deb"
