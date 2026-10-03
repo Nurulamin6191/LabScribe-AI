@@ -968,8 +968,11 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       }
 
       if (_currentSession == null) {
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
         _currentSession = MeetingSession(
+          id: timestamp.toString(),
           title: _titleController.text.trim().isEmpty ? 'Scientific Analysis' : _titleController.text.trim(),
+          createdAt: DateTime.now(),
           audioPath: '',
           durationSeconds: (effectiveText.split(RegExp(r'\s+')).length / 2.5).round(),
           isDeIdentified: _enableClinicalDeIdentification,
@@ -1102,8 +1105,11 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       return;
     }
     if (_currentSession == null) {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
       _currentSession = MeetingSession(
+        id: timestamp.toString(),
         title: _titleController.text.trim().isEmpty ? 'Scientific Session' : _titleController.text.trim(),
+        createdAt: DateTime.now(),
         audioPath: _recordedAudioPath ?? '',
         durationSeconds: _recordDurationSeconds,
       );

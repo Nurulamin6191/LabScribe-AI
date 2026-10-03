@@ -381,9 +381,9 @@ class MeetingSession {
   String? transcriptSha256;
 
   MeetingSession({
-    required this.id,
+    String? id,
     required this.title,
-    required this.createdAt,
+    DateTime? createdAt,
     this.audioPath,
     this.durationSeconds = 0,
     this.transcript = '',
@@ -399,7 +399,9 @@ class MeetingSession {
     this.isVirtualCall = false,
     this.audioSha256,
     this.transcriptSha256,
-  })  : actionItems = actionItems ?? [],
+  })  : id = id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        createdAt = createdAt ?? DateTime.now(),
+        actionItems = actionItems ?? [],
         glossaryTerms = glossaryTerms ?? [],
         citations = citations ?? [],
         slideAttachments = slideAttachments ?? [],
