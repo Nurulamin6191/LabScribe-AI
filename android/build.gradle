@@ -6,26 +6,23 @@ allprojects {
 }
 
 rootProject.buildDir = '../build'
-subprojects {
-    project.buildDir = "${rootProject.buildDir}/${project.name}"
-}
-subprojects {
-    project.evaluationDependsOn(':app')
-}
 
-tasks.register("clean", Delete) {
-    delete rootProject.buildDir
+    project.plugins.withId("com.android.application") {
+        project.android {
+            compileSdkVersion 36
+        }
+    }
 }
 
 subprojects {
     project.plugins.withId("com.android.library") {
         project.android {
-            compileSdkVersion 34
+            compileSdkVersion 36
         }
     }
     project.plugins.withId("com.android.application") {
         project.android {
-            compileSdkVersion 34
+            compileSdkVersion 36
         }
     }
 }
