@@ -1,0 +1,50 @@
+name: labscribe
+description: "Cross-platform AI companion for scientific meetings, lab discussions, and research lectures"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI & Presentation
+  cupertino_icons: ^1.0.6
+  google_fonts: ^6.1.0
+  flutter_markdown: ^0.6.18+2
+  intl: ^0.19.0
+  uuid: ^4.3.3
+
+  # Audio Recording & Playback
+  record: ^5.1.2
+  audioplayers: ^5.2.1
+  path_provider: ^2.1.2
+  permission_handler: ^11.3.0
+
+  # Networking & APIs
+  dio: ^5.4.1
+  http: ^1.2.0
+
+  # Local Persistence
+  shared_preferences: ^2.2.2
+  sqflite: ^2.3.2
+  sqflite_common_ffi: ^2.3.2
+  path: ^1.8.3
+
+  # Utilities & Media
+  flutter_dotenv: ^5.1.0
+  share_plus: ^7.2.2
+  file_picker: ^8.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/

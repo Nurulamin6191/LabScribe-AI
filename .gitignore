@@ -1,0 +1,24 @@
+# Flutter / Dart specific
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+.pub-cache/
+.pub/
+
+# Secrets & Environment
+.env
+*.key
+*.keystore
+
+# IDE / Editor
+.idea/
+*.iml
+.vscode/
+
+# Build artifacts
+*.deb
+*.apk
+*.zip
+*.tar.gz

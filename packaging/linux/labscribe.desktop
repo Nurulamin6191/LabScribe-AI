@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=LabScribe AI
+Comment=Local meeting and lecture recorder with automated transcription and AI intelligence
+Exec=/usr/bin/labscribe
+Icon=labscribe
+Terminal=false
+Type=Application
+Categories=Office;AudioVideo;Utility;
+Keywords=recorder;transcription;ai;lecture;meeting;notes;
+StartupWMClass=labscribe
