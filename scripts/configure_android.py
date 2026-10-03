@@ -5,7 +5,7 @@ import re
 def configure_android_manifest():
     manifest_path = "android/app/src/main/AndroidManifest.xml"
     if not os.path.exists(manifest_path):
-        print(f"Error: {manifest_path} not found.")
+        print(f"Notice: {manifest_path} not found.")
         return
 
     with open(manifest_path, "r", encoding="utf-8") as f:
@@ -46,51 +46,65 @@ def configure_android_manifest():
     with open(manifest_path, "w", encoding="utf-8") as f:
         f.write(content)
 
-def configure_app_build_gradle():
-    gradle_path = "android/app/build.gradle"
-    if not os.path.exists(gradle_path):
-        print(f"Error: {gradle_path} not found.")
-        return
+def configure_app_gradle():
+    # Handle Groovy (build.gradle)
+    groovy_path = "android/app/build.gradle"
+    if os.path.exists(groovy_path):
+        with open(groovy_path, "r", encoding="utf-8") as f:
+            content = f.read()
 
-    with open(gradle_path, "r", encoding="utf-8") as f:
-        content = f.read()
+        content = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 23', content)
+        content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', content)
+        content = re.sub(r'compileSdkVersion\s+flutter\.compileSdkVersion', 'compileSdkVersion 34', content)
+        content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 34', content)
+        content = re.sub(r'compileSdkVersion\s+\d+', 'compileSdkVersion 34', content)
+        content = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 34', content)
+        content = re.sub(r'compileSdk\s+\d+', 'compileSdk 34', content)
 
-    # Update minSdk to 23
-    content = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 23', content)
-    content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', content)
+        if "signingConfig signingConfigs.debug" not in content and "signingConfig = signingConfigs.debug" not in content:
+            if "buildTypes {" in content:
+                content = re.sub(
+                    r'buildTypes\s*\{\s*release\s*\{',
+                    'buildTypes {\n        release {\n            signingConfig signingConfigs.debug',
+                    content
+                )
+                print("Added debug signingConfig to release build type (Groovy)")
 
-    # Force compileSdk to 34
-    content = re.sub(r'compileSdkVersion\s+flutter\.compileSdkVersion', 'compileSdkVersion 34', content)
-    content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 34', content)
-    content = re.sub(r'compileSdkVersion\s+\d+', 'compileSdkVersion 34', content)
-    content = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 34', content)
-    content = re.sub(r'compileSdk\s+\d+', 'compileSdk 34', content)
+        with open(groovy_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print("Configured android/app/build.gradle successfully")
 
-    # Ensure debug signingConfig in release build type for installable release APK
-    if "signingConfig signingConfigs.debug" not in content and "signingConfig = signingConfigs.debug" not in content:
-        if "buildTypes {" in content:
-            content = re.sub(
-                r'buildTypes\s*\{\s*release\s*\{',
-                'buildTypes {\n        release {\n            signingConfig signingConfigs.debug',
-                content
-            )
-            print("Added debug signingConfig to release build type")
+    # Handle Kotlin DSL (build.gradle.kts)
+    kts_path = "android/app/build.gradle.kts"
+    if os.path.exists(kts_path):
+        with open(kts_path, "r", encoding="utf-8") as f:
+            content = f.read()
 
-    with open(gradle_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    print("Configured android/app/build.gradle successfully")
+        content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', content)
+        content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 34', content)
+        content = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 34', content)
 
-def configure_root_build_gradle():
-    root_gradle = "android/build.gradle"
-    if not os.path.exists(root_gradle):
-        print(f"Error: {root_gradle} not found.")
-        return
+        if "signingConfig = signingConfigs.getByName(\"debug\")" not in content and "signingConfig = signingConfigs.debug" not in content:
+            if "buildTypes {" in content:
+                content = re.sub(
+                    r'buildTypes\s*\{\s*release\s*\{',
+                    'buildTypes {\n        release {\n            signingConfig = signingConfigs.getByName("debug")',
+                    content
+                )
+                print("Added debug signingConfig to release build type (Kotlin DSL)")
 
-    with open(root_gradle, "r", encoding="utf-8") as f:
-        content = f.read()
+        with open(kts_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print("Configured android/app/build.gradle.kts successfully")
 
-    # Override compileSdk for all plugin subprojects (e.g. audioplayers_android requires SDK 34)
-    override_block = """
+def configure_root_gradle():
+    # Handle Groovy (android/build.gradle)
+    groovy_root = "android/build.gradle"
+    if os.path.exists(groovy_root):
+        with open(groovy_root, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        override_block = """
 subprojects {
     afterEvaluate { project ->
         if (project.hasProperty('android')) {
@@ -101,13 +115,36 @@ subprojects {
     }
 }
 """
-    if "compileSdkVersion 34" not in content:
-        content += override_block
-        with open(root_gradle, "w", encoding="utf-8") as f:
-            f.write(content)
-        print("Forced compileSdkVersion 34 for all plugin subprojects in root android/build.gradle")
+        if "compileSdkVersion 34" not in content:
+            content += override_block
+            with open(groovy_root, "w", encoding="utf-8") as f:
+                f.write(content)
+            print("Forced compileSdkVersion 34 in root android/build.gradle")
+
+    # Handle Kotlin DSL (android/build.gradle.kts)
+    kts_root = "android/build.gradle.kts"
+    if os.path.exists(kts_root):
+        with open(kts_root, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        kts_override = """
+subprojects {
+    afterEvaluate {
+        if (extensions.findByName("android") != null) {
+            configure<com.android.build.gradle.BaseExtension> {
+                compileSdkVersion(34)
+            }
+        }
+    }
+}
+"""
+        if "compileSdkVersion(34)" not in content:
+            content += kts_override
+            with open(kts_root, "w", encoding="utf-8") as f:
+                f.write(content)
+            print("Forced compileSdkVersion(34) in root android/build.gradle.kts")
 
 if __name__ == "__main__":
     configure_android_manifest()
-    configure_app_build_gradle()
-    configure_root_build_gradle()
+    configure_app_gradle()
+    configure_root_gradle()
