@@ -234,8 +234,8 @@ class _SettingsViewState extends State<SettingsView> {
             Card(
               elevation: 0,
               color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35),
-              child: const Padding(
-                padding: EdgeInsets.all(12.0),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
