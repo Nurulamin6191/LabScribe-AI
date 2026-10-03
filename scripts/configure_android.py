@@ -106,20 +106,25 @@ def configure_root_gradle():
 
         override_block = """
 subprojects {
-    afterEvaluate { project ->
-        if (project.hasProperty('android')) {
-            project.android {
-                compileSdkVersion 34
-            }
+    project.plugins.withId("com.android.library") {
+        project.android {
+            compileSdkVersion 34
+        }
+    }
+    project.plugins.withId("com.android.application") {
+        project.android {
+            compileSdkVersion 34
         }
     }
 }
 """
-        if "compileSdkVersion 34" not in content:
+        if "plugins.withId" not in content:
+            # Remove any previous subprojects block if present
+            content = re.sub(r'subprojects\s*\{[\s\S]*?compileSdkVersion[\s\S]*?\}\s*\}', '', content)
             content += override_block
             with open(groovy_root, "w", encoding="utf-8") as f:
                 f.write(content)
-            print("Forced compileSdkVersion 34 in root android/build.gradle")
+            print("Forced compileSdkVersion 34 via plugins.withId in root android/build.gradle")
 
     # Handle Kotlin DSL (android/build.gradle.kts)
     kts_root = "android/build.gradle.kts"
@@ -129,20 +134,21 @@ subprojects {
 
         kts_override = """
 subprojects {
-    afterEvaluate {
-        if (extensions.findByName("android") != null) {
-            configure<com.android.build.gradle.BaseExtension> {
-                compileSdkVersion(34)
-            }
-        }
+    plugins.withId("com.android.library") {
+        (extensions.findByName("android") as? com.android.build.gradle.BaseExtension)?.compileSdkVersion(34)
+    }
+    plugins.withId("com.android.application") {
+        (extensions.findByName("android") as? com.android.build.gradle.BaseExtension)?.compileSdkVersion(34)
     }
 }
 """
-        if "compileSdkVersion(34)" not in content:
+        if "plugins.withId" not in content:
+            # Remove any previous subprojects block if present
+            content = re.sub(r'subprojects\s*\{[\s\S]*?compileSdkVersion[\s\S]*?\}\s*\}', '', content)
             content += kts_override
             with open(kts_root, "w", encoding="utf-8") as f:
                 f.write(content)
-            print("Forced compileSdkVersion(34) in root android/build.gradle.kts")
+            print("Forced compileSdkVersion(34) via plugins.withId in root android/build.gradle.kts")
 
 if __name__ == "__main__":
     configure_android_manifest()
