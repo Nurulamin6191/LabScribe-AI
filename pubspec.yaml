@@ -1,7 +1,7 @@
 name: labscribe
-description: "Cross-platform AI companion for scientific meetings, lab discussions, and research lectures"
+description: "Industrial-grade meeting recorder and AI assistant with audio capture, Whisper transcription, and executive intelligence"
 publish_to: "none"
-version: 1.2.0+3
+version: 1.3.1+5
 
 environment:
   sdk: ">=3.2.0 <4.0.0"
