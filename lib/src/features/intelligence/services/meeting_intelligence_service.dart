@@ -98,31 +98,26 @@ class MeetingIntelligenceService {
       throw Exception('Audio file not found at: $audioFilePath');
     }
 
-    // If running in demo mode or unconfigured Whisper, use built-in biomedical transcription simulator
+    // If running in demo mode or unconfigured Whisper, use built-in meeting transcription simulator
     if (isTranscriptionDemoMode) {
-      onProgress?.call('Processing with biomedical Whisper conditioning (Zero-Setup Instant Mode)...');
-      await Future.delayed(const Duration(milliseconds: 1200));
-      return _generateMockScientificTranscript();
+      onProgress?.call('Processing with Whisper transcription engine (Zero-Setup Instant Mode)...');
+      await Future.delayed(const Duration(milliseconds: 1000));
+      return _generateMockIndustrialTranscript();
     }
 
-    final String scientificContextPrompt;
+    final String meetingContextPrompt;
     if (languageHint == 'hi' || languageHint == 'hinglish') {
-      scientificContextPrompt = 
-          'वैज्ञानिक शोध संगोष्ठी, ऑन्कोलॉजी लैब मीटिंग, जैव चिकित्सा अनुसंधान और क्लीनिकल सेमिनार. '
-          'Scientific research seminar, oncology tumor board, and biomedical lab meeting in Hindi, English, and Hinglish. '
-          'Terms: जीन (KRAS G12C, TP53, BRCA1/2, EGFR, HER2, BRAF V600E, PD-L1), '
-          'औषधियां (cisplatin, osimertinib, doxorubicin, paclitaxel, pembrolizumab, sotorasib), '
-          'प्रयोग और परख (Western blot, flow cytometry, qPCR, RNA-Seq, ChIP-seq, immunohistochemistry, CRISPR-Cas9), '
-          'सांख्यिकी (p-value, hazard ratio, Kaplan-Meier, 95% CI, IC50, viability). '
-          'Transcribe scientific and code-mixed Hindi-English terminology accurately with proper casing and Devanagari/English script.';
+      meetingContextPrompt = 
+          'व्यावसायिक कॉर्पोरेट मीटिंग, तकनीकी इंजीनियरिंग चर्चा, उत्पाद रणनीति और प्रोजेक्ट प्लानिंग सत्र। '
+          'Professional business meeting, technical engineering sync, executive review, and project planning session in Hindi, English, and Hinglish. '
+          'Transcribe speaker dialogue, technical terminology, acronyms, dates, metrics, action items, and discussion points accurately with natural casing, proper punctuation, and Devanagari/English script.';
+    } else if (languageHint == 'research') {
+      meetingContextPrompt = 
+          'Scientific research seminar and technical symposium. Terms: gene symbols, chemistry, experimental assays, and statistical metrics (p-value, 95% CI). Transcribe scientific terminology accurately with standard casing.';
     } else {
-      scientificContextPrompt = 
-          'Scientific research seminar, oncology tumor board, and biomedical lab meeting. '
-          'Terms: gene symbols (KRAS G12C, TP53, BRCA1/2, EGFR, HER2, BRAF V600E, PD-L1), '
-          'oncology drugs (cisplatin, osimertinib, doxorubicin, paclitaxel, pembrolizumab, sotorasib), '
-          'experimental assays (Western blot, flow cytometry, qPCR, RNA-Seq, ChIP-seq, immunohistochemistry, CRISPR-Cas9), '
-          'and statistics (p-value, hazard ratio, Kaplan-Meier, 95% CI). '
-          'Transcribe scientific and code-mixed terminology accurately with standard scientific casing.';
+      meetingContextPrompt = 
+          'Professional business meeting, executive review, technical engineering sync, sprint planning, product roadmap, and corporate discussion. '
+          'Transcribe speaker turns, technical terms, business metrics, deliverables, acronyms, decisions, and action items with clear punctuation and natural casing.';
     }
 
     try {
@@ -131,7 +126,7 @@ class MeetingIntelligenceService {
         onProgress?.call('Audio exceeds 24 MB limit. Segmenting into sequential chunks...');
         final chunkPaths = await _audioChunker.splitAudioFile(audioFilePath);
         final List<String> transcriptParts = [];
-        String rollingPrompt = scientificContextPrompt;
+        String rollingPrompt = meetingContextPrompt;
 
         try {
           for (int i = 0; i < chunkPaths.length; i++) {
@@ -147,7 +142,7 @@ class MeetingIntelligenceService {
 
             // Update rolling context for continuous syntactic flow
             rollingPrompt = _audioChunker.buildRollingPrompt(
-              basePrompt: scientificContextPrompt,
+              basePrompt: meetingContextPrompt,
               previousChunkTranscript: chunkTranscript,
             );
           }
@@ -160,15 +155,15 @@ class MeetingIntelligenceService {
         // Single chunk execution
         return await _transcribeSingleFile(
           filePath: audioFilePath,
-          prompt: scientificContextPrompt,
+          prompt: meetingContextPrompt,
           languageHint: languageHint,
         );
       }
     } catch (e) {
-      // Automatic graceful fallback ensuring zero-setup instant operation like Play Store consumer apps
-      onProgress?.call('Operating in Zero-Setup Mode (Built-in Scientific Engine)...');
+      // Automatic graceful fallback ensuring zero-setup instant operation
+      onProgress?.call('Operating in Zero-Setup Mode (Built-in Speech Engine)...');
       await Future.delayed(const Duration(milliseconds: 600));
-      return _generateMockScientificTranscript();
+      return _generateMockIndustrialTranscript();
     }
   }
 
@@ -207,10 +202,10 @@ class MeetingIntelligenceService {
     }
   }
 
-  /// Process full scientific intelligence pipeline:
-  /// 1. Synthesizes hypothesis, methodology, findings, and lab action items via LLM
-  /// 2. Extracts technical keywords (compounds, reagents, biomarkers) -> PubChem API
-  /// 3. Extracts literature references -> NCBI PubMed E-Utilities API
+  /// Process industrial meeting intelligence pipeline:
+  /// 1. Synthesizes executive summary, key takeaways, and decisions made via LLM
+  /// 2. Extracts concrete action items with assignees, priorities, and deadlines
+  /// 3. Computes conversational speaker diarization with timestamps
   Future<({
     SummaryResult summary,
     List<ActionItem> actionItems,
@@ -220,162 +215,149 @@ class MeetingIntelligenceService {
   })> processSessionIntelligence({
     required String transcript,
     required String sessionTitle,
+    String? meetingDomain, // 'General', 'Corporate', 'Engineering', 'Product', 'Sales', '1-on-1', 'Research'
   }) async {
     if (transcript.trim().isEmpty) {
       throw Exception('Transcript is empty. Cannot generate intelligence.');
     }
 
     if (isLlmDemoMode) {
-      return _generateMockScientificIntelligence(transcript);
+      return _generateMockIndustrialIntelligence(transcript);
     }
 
     try {
-      const scientificSystemPrompt = '''
-You are LabScribe's Principal Scientific Intelligence Specialist and Translational Research Analyst.
-You specialize in Molecular Biology, Oncology, Pharmacology, Genetics, and Clinical Medicine.
-You understand English, scientific Latin nomenclature, and multilingual / code-mixed scientific discourse (e.g. Hindi/English in academic research labs).
+      final domainDesc = meetingDomain != null && meetingDomain.isNotEmpty
+          ? 'Specializing in $meetingDomain contexts.'
+          : 'Specializing in Corporate Strategy, Software Engineering, Operations, and Product Planning.';
 
-Analyze the scientific session transcript and return a strictly valid JSON object matching this schema:
+      final industrialSystemPrompt = '''
+You are an Industrial AI Meeting Intelligence Specialist and Executive Chief of Staff.
+$domainDesc
+You understand English, Hindi, and code-mixed conversational discourse (Hinglish).
+
+Analyze the meeting transcript and return a strictly valid JSON object matching this schema:
 {
   "summary": {
-    "executiveSummary": "2-3 paragraph synthesis covering: (1) Research Hypothesis/Clinical Context, (2) Experimental Methodology & Cohorts, (3) Key Data Observations & Conclusions",
+    "executiveSummary": "2-3 paragraph executive briefing covering: (1) Meeting Purpose & Context, (2) Core Topics & Options Debated, (3) Final Conclusions & Next Milestones",
     "keyPoints": [
-      "Key scientific observation, data trend, or statistical finding (e.g. p < 0.05, hazard ratio)",
-      "Assay or validation result",
-      "Biological mechanism or pathway implication"
+      "Key strategic takeaway, technical agreement, or milestone 1",
+      "Important metric, benchmark, or timeline discussed 2",
+      "Critical context or risk highlighted 3"
     ],
     "decisionsMade": [
-      "Scientific protocol consensus, dosing change, or next experimental phase",
-      "Cohort criteria, control selection, or manuscript revision plan"
+      "Definitive organizational or architectural decision agreed upon 1",
+      "Resource allocation, budget approval, or roadmap consensus 2"
     ],
-    "scientificHypothesis": "Explicit or inferred scientific hypothesis under investigation",
-    "detectedLanguage": "English / Scientific Multilingual"
+    "scientificHypothesis": "",
+    "detectedLanguage": "English / Multilingual"
   },
   "speakerTurns": [
     {
       "speakerId": "Speaker 1",
-      "speakerName": "Dr. Rao (Lead PI)",
+      "speakerName": "Sarah (Tech Lead)",
       "startSeconds": 0,
-      "endSeconds": 45,
+      "endSeconds": 35,
       "text": "Utterance text attributed to this speaker"
     }
   ],
   "actionItems": [
     {
-      "task": "Concrete scientific protocol task (e.g. 'Run Western blot validation for phospho-ERK', 'Submit IRB protocol amendment', 'Order cisplatin and cell culture media')",
-      "assignee": "Scientist name, PI, Postdoc, Lab Tech, or 'Unassigned'",
-      "deadline": "YYYY-MM-DD or relative timeframe e.g. 'By Thursday before cell passage', or null",
+      "task": "Specific actionable deliverable (e.g. 'Deploy staging cluster to us-east-2', 'Review vendor contract by Friday')",
+      "assignee": "Person name or 'Unassigned'",
+      "deadline": "YYYY-MM-DD or timeframe (e.g. 'By Friday', 'End of Sprint'), or null",
       "priority": "High | Medium | Low",
-      "category": "Bench Assay | Reagents | Data Analysis | Clinical/IRB | Manuscript",
+      "category": "Engineering | Operations | Product | Management | General",
       "speaker": "Speaker who assigned or agreed to the task, or null"
     }
-  ],
-  "technicalKeywords": [
-    "chemical_or_drug_name",
-    "biomarker_or_gene",
-    "assay_or_biological_term"
-  ],
-  "literatureQueries": [
-    "Author, gene, or study referenced (e.g., 'Baselga PI3K inhibitor trial', 'KRAS G12C sotorasib resistance 2023')"
   ]
 }
 
-Scientific Processing Directives:
-1. Preserve precise scientific capitalization: gene symbols in UPPERCASE (e.g. EGFR, TP53, MYC), proteins/assays standard (e.g. p53, Western blot, RNA-Seq).
-2. Distinguish statistical significance: identify mentioned p-values, sample sizes (n=), controls, and confidence intervals.
-3. Extract 4-8 chemical compounds, drugs, reagents, or specialized biological terms in "technicalKeywords" to cross-reference with PubChem.
-4. Extract 1-3 paper/author queries in "literatureQueries" to resolve via PubMed.
-5. Conversational Diarization: Analyze speaker shifts and dialogue flow in the transcript. Segment into "speakerTurns" with startSeconds, endSeconds, speakerId ("Speaker 1", "Speaker 2", etc.), speakerName (infer Dr. Name or Role if mentioned in context, otherwise default to speakerId), and text.
-6. Output raw JSON only. Do not add markdown code fences or explanatory preamble.
+Processing Directives:
+1. Extract clear, concrete deliverables with designated owners and deadlines.
+2. In "decisionsMade", capture every agreed decision, approval, or consensus.
+3. Diarize the transcript into natural sequential speaker turns with timestamps.
+4. Output raw JSON only. Do not add markdown code fences or conversational preamble.
 ''';
 
-    // Hierarchical Map-Reduce summarization for long transcripts (> 5,000 words / ~7,500 tokens)
-    String effectiveContext = transcript;
-    final words = transcript.split(RegExp(r'\s+'));
-    if (words.length > 5000) {
-      final chunks = _chunkTranscript(transcript, wordsPerChunk: 4000, overlapWords: 200);
-      final List<String> sectionSyntheses = [];
+      // Hierarchical Map-Reduce summarization for long transcripts (> 5,000 words / ~7,500 tokens)
+      String effectiveContext = transcript;
+      final words = transcript.split(RegExp(r'\s+'));
+      if (words.length > 5000) {
+        final chunks = _chunkTranscript(transcript, wordsPerChunk: 4000, overlapWords: 200);
+        final List<String> sectionSyntheses = [];
 
-      for (int i = 0; i < chunks.length; i++) {
-        final sectionSummary = await _synthesizeSection(
-          sectionText: chunks[i],
-          sectionIndex: i + 1,
-          totalSections: chunks.length,
-          title: sessionTitle,
-        );
-        sectionSyntheses.add('### Section ${i + 1} of ${chunks.length}\n$sectionSummary');
+        for (int i = 0; i < chunks.length; i++) {
+          final sectionSummary = await _synthesizeSection(
+            sectionText: chunks[i],
+            sectionIndex: i + 1,
+            totalSections: chunks.length,
+            title: sessionTitle,
+          );
+          sectionSyntheses.add('### Section ${i + 1} of ${chunks.length}\n$sectionSummary');
+        }
+
+        effectiveContext = 'Hierarchically Condensed Meeting Record:\n\n${sectionSyntheses.join('\n\n---\n\n')}';
       }
 
-      effectiveContext = 'Hierarchically Condensed Seminar Record:\n\n${sectionSyntheses.join('\n\n---\n\n')}';
-    }
-
-    final userPrompt = '''
-Session Title: $sessionTitle
-Scientific Context:
+      final userPrompt = '''
+Meeting Title: $sessionTitle
+Meeting Transcript:
 """
 $effectiveContext
 """
 ''';
 
-    final cleanBaseUrl = _config.openAiBaseUrl.replaceAll(RegExp(r'/+$'), '');
-    final response = await _dio.post(
-      '$cleanBaseUrl/chat/completions',
-      data: {
-        'model': _config.llmModel,
-        'temperature': 0.15,
-        'response_format': {'type': 'json_object'},
-        'messages': [
-          {'role': 'system', 'content': scientificSystemPrompt},
-          {'role': 'user', 'content': userPrompt},
-        ],
-      },
-      options: Options(
-        headers: {
-          if (_config.openAiApiKey.isNotEmpty)
-            'Authorization': 'Bearer ${_config.openAiApiKey}',
-          'Content-Type': 'application/json',
+      final cleanBaseUrl = _config.openAiBaseUrl.replaceAll(RegExp(r'/+$'), '');
+      final response = await _dio.post(
+        '$cleanBaseUrl/chat/completions',
+        data: {
+          'model': _config.llmModel,
+          'temperature': 0.15,
+          'response_format': {'type': 'json_object'},
+          'messages': [
+            {'role': 'system', 'content': industrialSystemPrompt},
+            {'role': 'user', 'content': userPrompt},
+          ],
         },
-      ),
-    );
+        options: Options(
+          headers: {
+            if (_config.openAiApiKey.isNotEmpty)
+              'Authorization': 'Bearer ${_config.openAiApiKey}',
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
 
-    if (response.statusCode != 200 || response.data == null) {
-      throw Exception('Scientific AI processing failed with status: ${response.statusCode}');
-    }
+      if (response.statusCode != 200 || response.data == null) {
+        throw Exception('Meeting AI processing failed with status: ${response.statusCode}');
+      }
 
-    final rawJsonText = response.data['choices'][0]['message']['content'];
-    final Map<String, dynamic> parsed = _cleanAndParseJson(rawJsonText);
+      final rawJsonText = response.data['choices'][0]['message']['content'];
+      final Map<String, dynamic> parsed = _cleanAndParseJson(rawJsonText);
 
-    final summary = SummaryResult.fromJson(parsed['summary'] ?? {});
-    final rawTasks = (parsed['actionItems'] as List?) ?? [];
-    final actionItems = rawTasks.map((t) => ActionItem.fromJson(t)).toList();
-    final rawKeywords = List<String>.from(parsed['technicalKeywords'] ?? []);
-    final rawLiterature = List<String>.from(parsed['literatureQueries'] ?? []);
+      final summary = SummaryResult.fromJson(parsed['summary'] ?? {});
+      final rawTasks = (parsed['actionItems'] as List?) ?? [];
+      final actionItems = rawTasks.map((t) => ActionItem.fromJson(t)).toList();
 
-    final rawSpeakerTurns = (parsed['speakerTurns'] as List?) ?? [];
-    List<SpeakerTurn> speakerTurns = rawSpeakerTurns
-        .map((s) => SpeakerTurn.fromJson(Map<String, dynamic>.from(s as Map)))
-        .toList();
+      final rawSpeakerTurns = (parsed['speakerTurns'] as List?) ?? [];
+      List<SpeakerTurn> speakerTurns = rawSpeakerTurns
+          .map((s) => SpeakerTurn.fromJson(Map<String, dynamic>.from(s as Map)))
+          .toList();
 
-    if (speakerTurns.isEmpty && transcript.isNotEmpty) {
-      speakerTurns = _synthesizeFallbackSpeakerTurns(transcript);
-    }
+      if (speakerTurns.isEmpty && transcript.isNotEmpty) {
+        speakerTurns = _synthesizeFallbackSpeakerTurns(transcript);
+      }
 
-    // 1. Enrich with PubChem NIH API & Free Dictionary API cascade
-    final glossary = await _publicApiService.lookupBatchWords(rawKeywords);
-
-    // 2. Resolve PubMed citations via NCBI E-Utilities
-    final citations = await _publicApiService.resolveLiteratureCitations(rawLiterature);
-
-    return (
-      summary: summary,
-      actionItems: actionItems,
-      glossary: glossary,
-      citations: citations,
-      speakerTurns: speakerTurns,
-    );
+      return (
+        summary: summary,
+        actionItems: actionItems,
+        glossary: <GlossaryTerm>[],
+        citations: <PubMedCitation>[],
+        speakerTurns: speakerTurns,
+      );
     } catch (e) {
       // Automatic graceful fallback ensuring zero-setup instant operation
-      return _generateMockScientificIntelligence(transcript);
+      return _generateMockIndustrialIntelligence(transcript);
     }
   }
 
@@ -415,14 +397,13 @@ $effectiveContext
         {
           'role': 'system',
           'content': '''
-You are LabScribe's Scientific Research & Oncology Assistant.
-Answer questions strictly based on the experimental data, protocols, hypotheses, and clinical notes present in the transcript.
-Maintain high scientific rigor:
-- Cite specific concentrations, cell lines, statistical values (p-values, hazard ratios), and control groups if mentioned.
-- If an assay, reagent, or mechanism was not discussed, clearly state: "This was not specified in the session recording."
-- Support scientific inquiries in English, Hindi, and code-mixed formats.
+You are LabScribe's Industrial AI Meeting Assistant and Executive Co-Pilot.
+Answer questions accurately, professionally, and concisely based strictly on the discussions, decisions, action items, metrics, and statements present in the meeting transcript.
+- Reference specific individuals, milestones, timelines, budgets, and deliverables whenever mentioned.
+- If a question pertains to a topic not discussed in the meeting, state clearly: "This topic was not discussed in the meeting recording."
+- Support inquiries in English, Hindi, and code-mixed formats.
 
-Session Transcript:
+Meeting Transcript:
 """
 $transcript
 """
@@ -518,23 +499,31 @@ $transcript
     return await _publicApiService.translateText(text: text, targetLang: targetCode);
   }
 
-  String _generateLocalScientificAnswer(String transcript, String question) {
+  String _generateLocalIndustrialAnswer(String transcript, String question) {
     final q = question.toLowerCase();
-    if (q.contains('kras') || q.contains('mutation') || q.contains('gene')) {
-      return 'Scientific Assistant: The session reviewed data from a non-small cell lung cancer (NSCLC) cohort harboring the KRAS G12C mutation. Monotherapy with Sotorasib initially shows partial response, but acquired resistance typically emerges within 6–8 months mediated by secondary EGFR amplification and MET bypass activation.';
-    } else if (q.contains('action') || q.contains('task') || q.contains('todo') || q.contains('next')) {
-      return 'Scientific Assistant: Lab Action Items from this session:\n'
-          '• Dr. Chen: Run Western Blot validation on cell lysates by Thursday before next passaging.\n'
-          '• Priya: Finalize PDX (Patient-Derived Xenograft) RNA-Seq library preparation by Friday.\n'
-          '• Elena: Submit procurement order for Cisplatin, Doxorubicin, and anti-PD-L1 antibodies.\n'
-          '• Dr. Marcus: Compile combination index curves and submit translational abstract to AACR next week.';
-    } else if (q.contains('drug') || q.contains('compound') || q.contains('treatment') || q.contains('osimertinib') || q.contains('sotorasib')) {
-      return 'Scientific Assistant: The team tested combining Sotorasib (100 nM) with Osimertinib in H23 cell line viability assays. Dual blockade synergistically suppressed phospho-ERK and phospho-AKT signaling with high statistical significance (p < 0.001).';
-    } else if (q.contains('hypothesis') || q.contains('mechanism')) {
-      return 'Scientific Assistant: Research Hypothesis: Secondary EGFR amplification and MET bypass activation mediate acquired resistance to KRAS G12C inhibition. Dual pathway blockade abrogates downstream MAPK/AKT oncogenic signaling.';
+    if (q.contains('action') || q.contains('task') || q.contains('todo') || q.contains('next') || q.contains('deliverable')) {
+      return 'Meeting Assistant: Action Items identified from this meeting:\n'
+          '• Alex: Execute automated load testing with 10k concurrent users on replica cluster by Thursday.\n'
+          '• Priya: Coordinate external security penetration testing and audit sign-off by Friday.\n'
+          '• David: Finalize updated Enterprise SLA documentation for tier-1 clients by Friday.\n'
+          '• Sarah: Sign off on final deployment rollout schedule.';
+    } else if (q.contains('decision') || q.contains('decide') || q.contains('agree') || q.contains('consensus')) {
+      return 'Meeting Assistant: Key Decisions Made:\n'
+          '1. Approved \$12,500 monthly cloud infrastructure budget for secondary failover cluster.\n'
+          '2. Selected Blue/Green deployment strategy over rolling restart to guarantee zero downtime.\n'
+          '3. Enacted 48-hour pull request freeze prior to the November 15th cutover.';
+    } else if (q.contains('budget') || q.contains('cost') || q.contains('money') || q.contains('dollar') || q.contains('\$')) {
+      return 'Meeting Assistant: David and the executive committee formally approved a \$12,500 monthly budget allocation for the secondary multi-region standby cluster in AWS us-east-1.';
+    } else if (q.contains('alex') || q.contains('architecture') || q.contains('database') || q.contains('migration')) {
+      return 'Meeting Assistant: Alex reported that staging benchmarks demonstrated a 42% reduction in p99 API latency following the partitioned database index refactor. Alex is leading the load testing on the replica cluster.';
+    } else if (q.contains('priya') || q.contains('test') || q.contains('rollback') || q.contains('deploy')) {
+      return 'Meeting Assistant: Priya confirmed that automated canary deployments and rollback triggers are configured to trigger automatically if error rates exceed 0.05%. Priya is also overseeing external penetration testing.';
     }
-    return 'Scientific Assistant: Based on the recorded lab session transcript, the team is investigating KRAS G12C resistance mechanisms, dual EGFR/MET pathway blockade, Western blot validation protocols, and upcoming PDX RNA-Seq studies.';
+    return 'Meeting Assistant: Based on the recorded meeting transcript, the team reviewed Q4 cloud infrastructure migration, staging benchmark improvements (42% p99 latency reduction), approved a \$12,500 failover budget, and assigned deployment deliverables to Alex, Priya, and David.';
   }
+
+  String _generateLocalScientificAnswer(String transcript, String question) =>
+      _generateLocalIndustrialAnswer(transcript, question);
 
   /// Partition transcript into manageable overlapping blocks if it exceeds ~5,000 words
   List<String> _chunkTranscript(String transcript, {int wordsPerChunk = 4000, int overlapWords = 200}) {
@@ -667,18 +656,125 @@ Keep the summary under 350 words while retaining all specific gene names, drug d
 
   // --- Scientific Mock Fallbacks for Instant Offline Validation ---
 
-  String _generateMockScientificTranscript() {
-    return 'Dr. Rao (Lead PI): Good afternoon lab team. Today we are reviewing data from our non-small cell lung cancer (NSCLC) cohort '
-        'harboring the KRAS G12C mutation. As you recall, monotherapy with Sotorasib initially shows partial response, '
-        'but acquired resistance frequently emerges within six to eight months.\n\n'
-        'Dr. Marcus (Remote Zoom Collaborator): Our hypothesis is that secondary EGFR amplification and MET bypass activation mediate this resistance. '
-        'In our in vitro cell viability assays with the H23 cell line, combining Sotorasib at 100 nanomolar with Osimertinib '
-        'synergistically suppressed phospho-ERK and phospho-AKT levels with statistical significance (p < 0.001).\n\n'
-        'Dr. Rao (Lead PI): Dr. Chen, please run the Western Blot validation on cell lysates by Thursday before our next passaging. '
-        'Priya, aap patient-derived xenograft (PDX) samples ka RNA-Seq library preparation finalize kar lijiye by Friday.\n\n'
-        'Elena (Postdoc - Bench Lead): Understood Dr. Rao. Also, we need to order fresh stocks of Cisplatin, Doxorubicin, and anti-PD-L1 antibodies for the apoptosis flow cytometry assay. '
-        'I will submit the order requisition to procurement today.\n\n'
-        'Dr. Marcus (Remote Zoom Collaborator): Agreed. Let us compile the combination index curves and submit the translational abstract to AACR by next week. Thank you all.';
+  String _generateMockIndustrialTranscript() {
+    return 'Sarah (VP of Product): Good morning everyone. Let us review our Q4 enterprise platform roadmap, cloud infrastructure cutover, and client SLA deliverables.\n\n'
+        'Alex (Lead Architect): On the cloud infrastructure migration, our staging benchmarks in AWS us-east-1 showed a 42% reduction in p99 API latency after implementing the partitioned database cache. Zero-downtime cutover is planned for November 15th.\n\n'
+        'Priya (Engineering Lead): The automated canary deployments and rollback triggers are configured. If error rates exceed 0.05%, traffic immediately falls back to the stable cluster. Priya: Haan Alex, hum staging load testing Wednesday tak complete kar lenge.\n\n'
+        'David (Operations Director): The executive committee has approved the \$12,500 monthly budget allocation for the secondary multi-region standby cluster. We will sign off on the updated enterprise SLA documentation by Friday.\n\n'
+        'Sarah (VP of Product): Excellent progress. Alex, please finalize the load test report by Thursday. Priya, coordinate the security penetration testing with the external audit team. Thank you everyone.';
+  }
+
+  String _generateMockScientificTranscript() => _generateMockIndustrialTranscript();
+
+  Future<({
+    SummaryResult summary,
+    List<ActionItem> actionItems,
+    List<GlossaryTerm> glossary,
+    List<PubMedCitation> citations,
+    List<SpeakerTurn> speakerTurns,
+  })> _generateMockIndustrialIntelligence(String transcript) async {
+    await Future.delayed(const Duration(milliseconds: 1000));
+
+    final summary = SummaryResult(
+      executiveSummary:
+          'The executive product and engineering sync reviewed the Q4 enterprise platform roadmap, multi-region cloud infrastructure cutover, and client SLA deliverables. '
+          'Staging benchmarks demonstrated a 42% reduction in p99 API response latency following the partitioned database index refactor. '
+          'Management formally approved a \$12,500 monthly cloud allocation for the secondary standby cluster, with zero-downtime deployment scheduled for November 15th.',
+      keyPoints: [
+        'Cloud infrastructure staging benchmarks show a 42% reduction in p99 API latency.',
+        'Zero-downtime blue/green deployment strategy locked in for November 15th rollout.',
+        'Automated canary rollback triggers validated for error rates exceeding 0.05%.',
+        'Customer success and operations teams aligned on updated enterprise SLAs.',
+      ],
+      decisionsMade: [
+        'Approved \$12,500 monthly cloud infrastructure budget for secondary failover cluster.',
+        'Selected Blue/Green deployment strategy over rolling restart to guarantee zero downtime.',
+        'Agreed to freeze non-critical pull requests 48 hours prior to the migration cutover.',
+      ],
+      scientificHypothesis: '',
+      detectedLanguage: 'English & Hinglish / Business Multilingual',
+    );
+
+    final speakerTurns = [
+      SpeakerTurn(
+        id: 'turn-1',
+        speakerId: 'Speaker 1',
+        speakerName: 'Sarah (VP of Product)',
+        startSeconds: 0,
+        endSeconds: 32,
+        text: 'Good morning everyone. Let us review our Q4 enterprise platform roadmap, cloud infrastructure cutover, and client SLA deliverables.',
+      ),
+      SpeakerTurn(
+        id: 'turn-2',
+        speakerId: 'Speaker 2',
+        speakerName: 'Alex (Lead Architect)',
+        startSeconds: 33,
+        endSeconds: 78,
+        text: 'On the cloud infrastructure migration, our staging benchmarks in AWS us-east-1 showed a 42% reduction in p99 API latency after implementing the partitioned database cache. Zero-downtime cutover is planned for November 15th.',
+      ),
+      SpeakerTurn(
+        id: 'turn-3',
+        speakerId: 'Speaker 3',
+        speakerName: 'Priya (Engineering Lead)',
+        startSeconds: 79,
+        endSeconds: 114,
+        text: 'The automated canary deployments and rollback triggers are configured. If error rates exceed 0.05%, traffic immediately falls back to the stable cluster. Priya: Haan Alex, hum staging load testing Wednesday tak complete kar lenge.',
+      ),
+      SpeakerTurn(
+        id: 'turn-4',
+        speakerId: 'Speaker 4',
+        speakerName: 'David (Operations Director)',
+        startSeconds: 115,
+        endSeconds: 148,
+        text: 'The executive committee has approved the \$12,500 monthly budget allocation for the secondary multi-region standby cluster. We will sign off on the updated enterprise SLA documentation by Friday.',
+      ),
+      SpeakerTurn(
+        id: 'turn-5',
+        speakerId: 'Speaker 1',
+        speakerName: 'Sarah (VP of Product)',
+        startSeconds: 149,
+        endSeconds: 178,
+        text: 'Excellent progress. Alex, please finalize the load test report by Thursday. Priya, coordinate the security penetration testing with the external audit team. Thank you everyone.',
+      ),
+    ];
+
+    final actionItems = [
+      ActionItem(
+        id: '1',
+        task: 'Execute automated load testing with 10k concurrent users on AWS replica cluster',
+        assignee: 'Alex',
+        deadline: 'Thursday',
+        priority: 'High',
+        category: 'Engineering',
+        speaker: 'Sarah (VP of Product)',
+      ),
+      ActionItem(
+        id: '2',
+        task: 'Coordinate external security penetration testing and audit sign-off',
+        assignee: 'Priya',
+        deadline: 'Friday',
+        priority: 'High',
+        category: 'Operations',
+        speaker: 'Sarah (VP of Product)',
+      ),
+      ActionItem(
+        id: '3',
+        task: 'Finalize and publish updated Enterprise SLA documentation for tier-1 clients',
+        assignee: 'David',
+        deadline: 'Friday',
+        priority: 'Medium',
+        category: 'Management',
+        speaker: 'David (Operations Director)',
+      ),
+    ];
+
+    return (
+      summary: summary,
+      actionItems: actionItems,
+      glossary: <GlossaryTerm>[],
+      citations: <PubMedCitation>[],
+      speakerTurns: speakerTurns,
+    );
   }
 
   Future<({
@@ -687,136 +783,8 @@ Keep the summary under 350 words while retaining all specific gene names, drug d
     List<GlossaryTerm> glossary,
     List<PubMedCitation> citations,
     List<SpeakerTurn> speakerTurns,
-  })> _generateMockScientificIntelligence(String transcript) async {
-    await Future.delayed(const Duration(milliseconds: 1000));
-
-    final summary = SummaryResult(
-      executiveSummary:
-          'The research meeting reviewed mechanisms of acquired resistance in KRAS G12C-mutant non-small cell lung cancer (NSCLC). '
-          'Preliminary in vitro data on H23 cell lines demonstrates that dual inhibition using Sotorasib combined with Osimertinib '
-          'effectively abrogates secondary EGFR/MET bypass signaling, significantly downregulating phosphorylated ERK and AKT pathways (p < 0.001). '
-          'Next steps involve in vivo PDX RNA-Seq transcriptomic validation and apoptosis flow cytometry quantification.',
-      keyPoints: [
-        'Sotorasib monotherapy exhibits acquired resistance mediated by EGFR/MET bypass activation.',
-        'Dual inhibition (Sotorasib 100 nM + Osimertinib) synergistic efficacy confirmed in vitro (p < 0.001).',
-        'Marked downregulation of downstream phosphorylated ERK and AKT signaling observed.',
-        'Patient-derived xenograft (PDX) transcriptomic profiling scheduled to corroborate in vitro findings.',
-      ],
-      decisionsMade: [
-        'Proceed with combination regimen testing in patient-derived xenograft (PDX) models.',
-        'Authorize purchase of fresh Cisplatin, Doxorubicin, and anti-PD-L1 antibody batches.',
-        'Prepare translational abstract submission for upcoming AACR annual conference.',
-      ],
-      scientificHypothesis:
-          'Secondary EGFR amplification and MET bypass signaling drive acquired resistance to KRAS G12C inhibition, which can be overcome via dual pathway blockade.',
-      detectedLanguage: 'English / Scientific Multilingual',
-    );
-
-    final speakerTurns = [
-      SpeakerTurn(
-        id: 'turn-1',
-        speakerId: 'Speaker 1',
-        speakerName: 'Dr. Rao (Lead PI)',
-        startSeconds: 0,
-        endSeconds: 42,
-        text: 'Good afternoon lab team. Today we are reviewing data from our non-small cell lung cancer (NSCLC) cohort harboring the KRAS G12C mutation. As you recall, monotherapy with Sotorasib initially shows partial response, but acquired resistance frequently emerges within six to eight months.',
-      ),
-      SpeakerTurn(
-        id: 'turn-2',
-        speakerId: 'Speaker 2',
-        speakerName: 'Dr. Marcus (Remote Zoom Collaborator)',
-        startSeconds: 43,
-        endSeconds: 88,
-        text: 'Our hypothesis is that secondary EGFR amplification and MET bypass activation mediate this resistance. In our in vitro cell viability assays with the H23 cell line, combining Sotorasib at 100 nanomolar with Osimertinib synergistically suppressed phospho-ERK and phospho-AKT levels (p < 0.001).',
-      ),
-      SpeakerTurn(
-        id: 'turn-3',
-        speakerId: 'Speaker 1',
-        speakerName: 'Dr. Rao (Lead PI)',
-        startSeconds: 89,
-        endSeconds: 115,
-        text: 'Dr. Chen, please run the Western Blot validation on cell lysates by Thursday before our next passaging. Priya, aap patient-derived xenograft (PDX) samples ka RNA-Seq library preparation finalize kar lijiye by Friday.',
-      ),
-      SpeakerTurn(
-        id: 'turn-4',
-        speakerId: 'Speaker 3',
-        speakerName: 'Elena (Postdoc - Bench Lead)',
-        startSeconds: 116,
-        endSeconds: 145,
-        text: 'Understood Dr. Rao. Also, we need to order fresh stocks of Cisplatin, Doxorubicin, and anti-PD-L1 antibodies for the apoptosis flow cytometry assay. I will submit the order requisition to procurement today.',
-      ),
-      SpeakerTurn(
-        id: 'turn-5',
-        speakerId: 'Speaker 2',
-        speakerName: 'Dr. Marcus (Remote Zoom Collaborator)',
-        startSeconds: 146,
-        endSeconds: 172,
-        text: 'Agreed. Let us compile the combination index curves and submit the translational abstract to AACR by next week. Thank you all.',
-      ),
-    ];
-
-    final actionItems = [
-      ActionItem(
-        id: '1',
-        task: 'Execute Western Blot validation for phospho-ERK and phospho-AKT on H23 cell lysates',
-        assignee: 'Dr. Chen',
-        deadline: 'Thursday',
-        priority: 'High',
-        category: 'Bench Assay',
-        speaker: 'Dr. Rao (Lead PI)',
-      ),
-      ActionItem(
-        id: '2',
-        task: 'Finalize RNA-Seq library prep on PDX tumor tissue cohorts',
-        assignee: 'Priya',
-        deadline: 'Friday',
-        priority: 'High',
-        category: 'Data Analysis',
-        speaker: 'Dr. Rao (Lead PI)',
-      ),
-      ActionItem(
-        id: '3',
-        task: 'Procure Cisplatin, Doxorubicin, and anti-PD-L1 reagents for apoptosis assay',
-        assignee: 'Lab Tech',
-        deadline: 'Monday',
-        priority: 'Medium',
-        category: 'Reagents',
-        speaker: 'Elena (Postdoc - Bench Lead)',
-      ),
-      ActionItem(
-        id: '4',
-        task: 'Draft translational oncology abstract for AACR conference submission',
-        assignee: 'Research Team',
-        deadline: 'Next week',
-        priority: 'High',
-        category: 'Manuscript',
-        speaker: 'Dr. Marcus (Remote Zoom Collaborator)',
-      ),
-    ];
-
-    // Query PubChem and Free Dictionary cascade for scientific terms
-    final sampleScientificTerms = ['cisplatin', 'doxorubicin', 'apoptosis', 'angiogenesis'];
-    final glossary = await _publicApiService.lookupBatchWords(sampleScientificTerms);
-
-    final sampleCitations = [
-      PubMedCitation(
-        pmid: '33208354',
-        title: 'Mechanisms of Acquired Resistance to KRAS G12C Inhibitors in Non-Small Cell Lung Cancer',
-        authors: 'Awad MM, Liu S, Rybkin II, et al.',
-        journal: 'N Engl J Med',
-        pubYear: '2021',
-        doi: '10.1056/NEJMoa2105281',
-      ),
-    ];
-
-    return (
-      summary: summary,
-      actionItems: actionItems,
-      glossary: glossary,
-      citations: sampleCitations,
-      speakerTurns: speakerTurns,
-    );
-  }
+  })> _generateMockScientificIntelligence(String transcript) =>
+      _generateMockIndustrialIntelligence(transcript);
 }
 
 extension StringExtension on String {

@@ -37,21 +37,21 @@ class ExportService {
     buffer.writeln(session.summary?.executiveSummary ?? 'No summary available.');
     
     if (session.summary != null && session.summary!.keyPoints.isNotEmpty) {
-      buffer.writeln('\n## Key Experimental Findings & Trends');
+      buffer.writeln('\n## Key Discussion Points & Takeaways');
       for (final point in session.summary!.keyPoints) {
         buffer.writeln('- $point');
       }
     }
 
     if (session.summary != null && session.summary!.decisionsMade.isNotEmpty) {
-      buffer.writeln('\n## Protocol & Consensus Decisions');
+      buffer.writeln('\n## Key Decisions Made');
       for (final decision in session.summary!.decisionsMade) {
         buffer.writeln('- $decision');
       }
     }
 
     if (session.actionItems.isNotEmpty) {
-      buffer.writeln('\n## Protocols & Bench Action Items');
+      buffer.writeln('\n## Action Items & Deliverables');
       for (final item in session.actionItems) {
         final cat = '[${item.category}]';
         final speakerTag = item.speaker != null ? ' (Attr: ${item.speaker})' : '';
@@ -160,6 +160,27 @@ class ExportService {
     await file.writeAsString(session.transcript);
 
     await Share.shareXFiles([XFile(file.path)], text: 'Session Transcript: ${session.title}');
+  }
+
+  /// Export action items and deliverables as standard CSV for Excel, Google Sheets, Jira, and Asana
+  Future<void> exportActionItemsAsCsv(MeetingSession session) async {
+    final buffer = StringBuffer();
+    buffer.writeln('Task,Assignee,Priority,Category,Deadline,Completed,Speaker');
+    for (final item in session.actionItems) {
+      final taskClean = item.task.replaceAll('"', '""');
+      final assigneeClean = item.assignee.replaceAll('"', '""');
+      final catClean = item.category.replaceAll('"', '""');
+      final deadlineClean = (item.deadline ?? '').replaceAll('"', '""');
+      final speakerClean = (item.speaker ?? '').replaceAll('"', '""');
+      buffer.writeln('"$taskClean","$assigneeClean",${item.priority},"$catClean","$deadlineClean",${item.isCompleted},"$speakerClean"');
+    }
+
+    final dir = await getTemporaryDirectory();
+    final safeTitle = session.title.replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(RegExp(r'\s+'), '_');
+    final file = File('${dir.path}/${safeTitle}_action_items.csv');
+    await file.writeAsString(buffer.toString());
+
+    await Share.shareXFiles([XFile(file.path)], text: 'Action Items CSV: ${session.title}');
   }
 
   /// Export citations as BibTeX (.bib) file for Zotero and reference managers
