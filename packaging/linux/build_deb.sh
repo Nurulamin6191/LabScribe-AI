@@ -37,7 +37,7 @@ EOF
 # Copy binaries and bundle assets
 echo "=== Copying Flutter Bundle Files ==="
 cp -r "$BUNDLE_DIR/"* "$DEB_DIR/usr/lib/$APP_NAME/"
-ln -s "/usr/lib/$APP_NAME/$APP_NAME" "$DEB_DIR/usr/bin/$APP_NAME"
+ln -sf "/usr/lib/$APP_NAME/$APP_NAME" "$DEB_DIR/usr/bin/$APP_NAME"
 
 # Copy Desktop integration files
 cp packaging/linux/labscribe.desktop "$DEB_DIR/usr/share/applications/"

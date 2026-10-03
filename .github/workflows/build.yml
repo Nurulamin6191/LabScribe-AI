@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -29,6 +29,16 @@ jobs:
         with:
           channel: 'stable'
           cache: true
+
+      - name: Scaffold Official Android Platform Files
+        run: |
+          mkdir -p /tmp/android_custom
+          cp -r android/app/src/main/kotlin /tmp/android_custom/ 2>/dev/null || true
+          rm -rf android
+          flutter create --platforms=android --org dev.labscribe --project-name labscribe .
+          mkdir -p android/app/src/main/kotlin/dev/labscribe/app
+          cp -r /tmp/android_custom/kotlin/* android/app/src/main/kotlin/ 2>/dev/null || true
+          python3 scripts/configure_android.py
 
       - name: Install Dependencies
         run: flutter pub get
@@ -64,6 +74,11 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Scaffold Official Linux Platform Files
+        run: |
+          rm -rf linux
+          flutter create --platforms=linux --org dev.labscribe --project-name labscribe .
+
       - name: Install Dependencies
         run: flutter pub get
 
@@ -90,6 +105,12 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Scaffold Official Windows Platform Files
+        run: |
+          Remove-Item -Recurse -Force windows
+          flutter create --platforms=windows --org dev.labscribe --project-name labscribe .
+        shell: pwsh
+
       - name: Install Dependencies
         run: flutter pub get
 
@@ -98,7 +119,15 @@ jobs:
 
       - name: Archive Windows Release Bundle
         run: |
-          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath LabScribe-AI-Windows-x64.zip
+          if (Test-Path "build\windows\x64\runner\Release") {
+            Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath LabScribe-AI-Windows-x64.zip
+          } elseif (Test-Path "build\windows\runner\Release") {
+            Compress-Archive -Path build\windows\runner\Release\* -DestinationPath LabScribe-AI-Windows-x64.zip
+          } else {
+            Write-Error "Release build directory not found!"
+            exit 1
+          }
+        shell: pwsh
 
       - name: Upload Windows Bundle
         uses: actions/upload-artifact@v4
@@ -136,7 +165,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: "LabScribe AI ${{ github.ref_name }} — Standalone Installers"
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
           draft: false
           prerelease: false
           generate_release_notes: true

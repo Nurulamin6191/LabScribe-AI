@@ -69,7 +69,7 @@ class AudioRecordingService : Service() {
             if (wakeLock?.isHeld == true) {
                 wakeLock?.release()
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
         wakeLock = null
     }
 
