@@ -82,7 +82,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   MeetingSession? _currentSession;
   late TabController _tabController;
   int _mobileNavIndex = 0;
-  int _deskIndex = 0; // desktop: 0 Record, 1..7 map to tabController 0..6
+  int _deskIndex = 0; // desktop: 0 Record, 1..6 map to tabController 0..5
   final TextEditingController _transcriptSearchController = TextEditingController();
   String _transcriptQuery = '';
   String? _transcriptSpeaker; // null = all speakers
@@ -162,9 +162,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       }
     });
 
-    // 7 review tabs: Overview, Transcript, Actions, Speakers, Compounds, Papers, Q&A
+    // 6 review tabs: Overview, Transcript, Actions, Speakers, Library, Q&A
     // (desktop Record destination is separate from the TabController)
-    _tabController = TabController(length: 7, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _tabController.addListener(_syncDeskFromTab);
     _titleController.addListener(_onTitleChanged);
 
@@ -915,7 +915,16 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         });
       }
 
-      // 2. Client-Side Clinical De-Identification (if enabled)
+      if (transcript.trim().isEmpty) {
+        setState(() {
+          _processingStage = ProcessingStage.idle;
+          _statusMessage = 'No speech detected in this recording.';
+        });
+        _showNoSpeechDialog();
+        return;
+      }
+
+      // 2. Optional pattern-based redaction (if enabled)
       if (_enableClinicalDeIdentification) {
         setState(() {
           _processingStage = ProcessingStage.deidentifying;
@@ -1301,40 +1310,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Language / भाषा', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-                Text('Whisper & AI tuning', style: TextStyle(color: Colors.grey, fontSize: 10.5)),
+                Text('On-device speech model', style: TextStyle(color: Colors.grey, fontSize: 10.5)),
               ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: DropdownButton<String>(
-              value: _selectedLanguage,
-              underline: const SizedBox(),
-              isDense: true,
-              borderRadius: BorderRadius.circular(14),
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: theme.colorScheme.onSurface),
-              items: const [
-                DropdownMenuItem(value: 'auto', child: Text('Auto')),
-                DropdownMenuItem(value: 'en', child: Text('English')),
-                DropdownMenuItem(value: 'hi', child: Text('हिन्दी')),
-                DropdownMenuItem(value: 'hinglish', child: Text('Hinglish')),
-              ],
-              onChanged: (val) {
-                if (val != null) {
-                  setState(() {
-                    _selectedLanguage = val;
-                  });
-                  _showSnackBar(
-                    val == 'hi'
-                        ? 'हिन्दी भाषा अनुकूलित (Hindi biomedical optimization active)'
-                        : (val == 'hinglish' ? 'Hinglish code-mixed biomedical optimization active' : 'Language set to ${val.toUpperCase()}'),
-                  );
-                }
-              },
             ),
           ),
         ],
@@ -1342,12 +1319,40 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildScienceMobile(ThemeData theme) {
+  void _setLanguage(String val) {
+    setState(() {
+      _selectedLanguage = val;
+    });
+    _showSnackBar(
+      val == 'hi'
+          ? 'हिन्दी भाषा अनुकूलित (Hindi biomedical optimization active)'
+          : (val == 'hinglish' ? 'Hinglish code-mixed biomedical optimization active' : 'Language set to ${val.toUpperCase()}'),
+    );
+  }
+
+  Widget _languageSegmented(ThemeData theme) {
+    return SegmentedButton<String>(
+      segments: const [
+        ButtonSegment(value: 'auto', label: Text('Auto', style: TextStyle(fontSize: 12))),
+        ButtonSegment(value: 'en', label: Text('EN', style: TextStyle(fontSize: 12))),
+        ButtonSegment(value: 'hi', label: Text('हिन्दी', style: TextStyle(fontSize: 12))),
+        ButtonSegment(value: 'hinglish', label: Text('Hinglish', style: TextStyle(fontSize: 12))),
+      ],
+      selected: {_selectedLanguage},
+      onSelectionChanged: (s) => _setLanguage(s.first),
+      showSelectedIcon: false,
+      style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
+    );
+  }
+
+  /// Reference library: compounds (PubChem + atlas) and papers (PubMed)
+  /// under one segmented tab on every form factor.
+  Widget _buildLibraryTab(ThemeData theme) {
     return Column(
       children: [
         _segmentedHeader(
           theme,
-          ['PubChem (${_currentSession?.glossaryTerms.length ?? 0})', 'PubMed (${_currentSession?.citations.length ?? 0})'],
+          ['Compounds (${_currentSession?.glossaryTerms.length ?? 0})', 'Papers (${_currentSession?.citations.length ?? 0})'],
           [Icons.medication_liquid_outlined, Icons.library_books_outlined],
           _scienceSubTabIndex,
           (v) => setState(() => _scienceSubTabIndex = v),
@@ -1360,6 +1365,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       ],
     );
   }
+
+  Widget _buildScienceMobile(ThemeData theme) => _buildLibraryTab(theme);
 
   bool _isConnectionError(dynamic e) {
     if (e is DioException) {
@@ -1377,11 +1384,58 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         str.contains('errno = 111');
   }
 
+  /// Shown when on-device transcription returns no text: usually a silent
+  /// recording, a blocked microphone, or audio the current model size
+  /// cannot resolve. Offers concrete next steps instead of a dead end.
+  Future<void> _showNoSpeechDialog() async {
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.hearing_disabled_outlined, color: Colors.orange, size: 26),
+            SizedBox(width: 10),
+            Expanded(child: Text('No speech detected', style: TextStyle(fontSize: 17))),
+          ],
+        ),
+        content: const SingleChildScrollView(
+          child: Text(
+            'The speech model heard no recognizable speech in this recording. '
+            'Common causes: a silent or very quiet room, the microphone was covered, '
+            'or the Tiny model is too small for this audio.\n\n'
+            'Try: record closer to the speakers, check the microphone, use a '
+            'longer sample — or switch to the Base/Small model under Engine.',
+            style: TextStyle(fontSize: 13, height: 1.45),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Dismiss'),
+          ),
+          FilledButton.tonalIcon(
+            icon: const Icon(Icons.settings_outlined, size: 16),
+            label: const Text('Engine settings'),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsView()),
+              );
+              widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Pipeline failure dialog: explains the error and offers a retry.
   /// Nothing is substituted and nothing is lost — audio and notes stay put.
   Future<void> _showPipelineErrorDialog(dynamic error) async {
     if (!mounted) return;
-    final errText = error.toString();
+    final errText = error.toString().replaceFirst(RegExp(r'^(Exception|StateError):\s*'), '');
     final short = errText.length > 240 ? '${errText.substring(0, 240)}…' : errText;
     await showDialog(
       context: context,
@@ -1978,17 +2032,16 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _deskNavEntry(theme, 2, Icons.description_outlined, 'Transcript', s == null || s.transcript.isEmpty ? '' : '${_wordCount(s.transcript)}w', expanded: expanded),
       _deskNavEntry(theme, 3, Icons.fact_check_outlined, 'Actions', _openTaskCount(), expanded: expanded),
       _deskNavEntry(theme, 4, Icons.record_voice_over_outlined, 'Speakers', n(s?.speakerTurns.length ?? 0), expanded: expanded),
-      _deskNavEntry(theme, 5, Icons.medication_liquid_outlined, 'Compounds', n(s?.glossaryTerms.length ?? 0), expanded: expanded),
-      _deskNavEntry(theme, 6, Icons.library_books_outlined, 'Papers', n(s?.citations.length ?? 0), expanded: expanded),
-      _deskNavEntry(theme, 7, Icons.forum_outlined, 'Ask', n(s?.chatHistory.length ?? 0), expanded: expanded),
+      _deskNavEntry(theme, 5, Icons.library_books_outlined, 'Library', n((s?.glossaryTerms.length ?? 0) + (s?.citations.length ?? 0)), expanded: expanded),
+      _deskNavEntry(theme, 6, Icons.forum_outlined, 'Ask', n(s?.chatHistory.length ?? 0), expanded: expanded),
     ];
   }
 
   Widget _railDestination(ThemeData theme, int tabIndex, IconData icon, String label) {
     // Legacy compact entry kept for compatibility; maps old tab indices to desk indices.
     final desk = tabIndex + 1;
-    final icons = [Icons.summarize_outlined, Icons.description_outlined, Icons.fact_check_outlined, Icons.record_voice_over_outlined, Icons.medication_liquid_outlined, Icons.library_books_outlined, Icons.forum_outlined];
-    return _deskNavEntry(theme, desk, icons[tabIndex.clamp(0, 6).toInt()], label, null);
+    final icons = [Icons.summarize_outlined, Icons.description_outlined, Icons.fact_check_outlined, Icons.record_voice_over_outlined, Icons.library_books_outlined, Icons.forum_outlined];
+    return _deskNavEntry(theme, desk, icons[tabIndex.clamp(0, 5).toInt()], label, null);
   }
 
   Widget _buildDesktopRail(ThemeData theme) {
@@ -2110,8 +2163,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         _buildTranscriptTab(theme),
                         _buildTasksTab(theme),
                         _buildSpeakersTab(theme),
-                        _buildGlossaryTab(theme),
-                        _buildCitationsTab(theme),
+                        _buildLibraryTab(theme),
                         _buildChatTab(theme),
                       ],
                     ),
@@ -2939,23 +2991,41 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionLabel('Session', icon: null),
-        const SizedBox(height: 8),
-        _templatePicker(theme),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _titleController,
-          decoration: const InputDecoration(
-            labelText: 'Session title',
-            hintText: 'e.g. KRAS G12C NSCLC seminar',
-            prefixIcon: Icon(Icons.science_outlined, size: 18),
+        LabCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SectionLabel('New session'),
+              const SizedBox(height: 8),
+              _templatePicker(theme),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _titleController,
+                decoration: const InputDecoration(
+                  labelText: 'Session title',
+                  hintText: 'e.g. KRAS G12C NSCLC seminar',
+                  prefixIcon: Icon(Icons.science_outlined, size: 18),
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 10),
-        _buildAudioDeviceSelector(theme),
-        const SizedBox(height: 8),
-        _buildLanguageSelector(theme),
-        const SizedBox(height: 12),
+        LabCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SectionLabel('Capture'),
+              const SizedBox(height: 8),
+              _buildAudioDeviceSelector(theme),
+              const SizedBox(height: 8),
+              _buildLanguageSelector(theme),
+              const SizedBox(height: 8),
+              _languageSegmented(theme),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
         _timerHero(theme),
         const SizedBox(height: 12),
         _recordActions(theme),
