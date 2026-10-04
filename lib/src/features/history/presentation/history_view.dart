@@ -15,9 +15,10 @@ class HistoryView extends StatefulWidget {
 
 class _HistoryViewState extends State<HistoryView> {
   List<MeetingSession> _allSessions = [];
-  List<MeetingSession> _filteredSessions = [];
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
+  int _histFilter = 0; // 0 All, 1 With tasks, 2 With papers, 3 With speakers
+  int _histSort = 0; // 0 Newest, 1 Oldest, 2 Title A-Z
 
   @override
   void initState() {
@@ -38,26 +39,46 @@ class _HistoryViewState extends State<HistoryView> {
     if (!mounted) return;
     setState(() {
       _allSessions = sessions;
-      _filteredSessions = sessions;
       _isLoading = false;
     });
   }
 
   void _onSearchChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Search query + type filter + sort, computed on demand like Fireflies/Otter libraries.
+  List<MeetingSession> _visibleSessions() {
     final query = _searchController.text.trim().toLowerCase();
-    setState(() {
-      if (query.isEmpty) {
-        _filteredSessions = _allSessions;
-      } else {
-        _filteredSessions = _allSessions.where((s) {
-          final titleMatch = s.title.toLowerCase().contains(query);
-          final hypothesisMatch = s.summary?.scientificHypothesis.toLowerCase().contains(query) ?? false;
-          final transcriptMatch = s.transcript.toLowerCase().contains(query);
-          final dateMatch = s.createdAt.toLocal().toString().toLowerCase().contains(query);
-          return titleMatch || hypothesisMatch || transcriptMatch || dateMatch;
-        }).toList();
+    var list = _allSessions.where((s) {
+      final matchesQuery = query.isEmpty ||
+          s.title.toLowerCase().contains(query) ||
+          (s.summary?.scientificHypothesis.toLowerCase().contains(query) ?? false) ||
+          s.transcript.toLowerCase().contains(query) ||
+          s.createdAt.toLocal().toString().toLowerCase().contains(query);
+      if (!matchesQuery) return false;
+      switch (_histFilter) {
+        case 1:
+          return s.actionItems.isNotEmpty;
+        case 2:
+          return s.citations.isNotEmpty;
+        case 3:
+          return s.speakerTurns.isNotEmpty;
+        default:
+          return true;
       }
-    });
+    }).toList();
+    switch (_histSort) {
+      case 1:
+        list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        break;
+      case 2:
+        list.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+        break;
+      default:
+        list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }
+    return list;
   }
 
   Future<void> _deleteSession(String id) async {
@@ -79,43 +100,83 @@ class _HistoryViewState extends State<HistoryView> {
           ],
         ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(64),
+          preferredSize: const Size.fromHeight(112),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: TextField(
-              controller: _searchController,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                hintText: 'Search title, hypothesis, gene, PMID or date…',
-                prefixIcon: const Icon(Icons.search, size: 18),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 17),
-                        onPressed: () => _searchController.clear(),
-                      )
-                    : null,
-                isDense: true,
-              ),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Column(
+              children: [
+                TextField(
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    hintText: 'Search title, hypothesis, gene, PMID or date…',
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 17),
+                            onPressed: () => _searchController.clear(),
+                          )
+                        : null,
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            ChoiceChip(label: const Text('All', style: TextStyle(fontSize: 12)), selected: _histFilter == 0, onSelected: (_) => setState(() => _histFilter = 0), visualDensity: VisualDensity.compact),
+                            const SizedBox(width: 7),
+                            ChoiceChip(label: const Text('Tasks', style: TextStyle(fontSize: 12)), selected: _histFilter == 1, onSelected: (_) => setState(() => _histFilter = 1), visualDensity: VisualDensity.compact),
+                            const SizedBox(width: 7),
+                            ChoiceChip(label: const Text('Papers', style: TextStyle(fontSize: 12)), selected: _histFilter == 2, onSelected: (_) => setState(() => _histFilter = 2), visualDensity: VisualDensity.compact),
+                            const SizedBox(width: 7),
+                            ChoiceChip(label: const Text('Speakers', style: TextStyle(fontSize: 12)), selected: _histFilter == 3, onSelected: (_) => setState(() => _histFilter = 3), visualDensity: VisualDensity.compact),
+                          ],
+                        ),
+                      ),
+                    ),
+                    PopupMenuButton<int>(
+                      icon: const Icon(Icons.sort_outlined, size: 19),
+                      tooltip: 'Sort sessions',
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      onSelected: (v) => setState(() => _histSort = v),
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(value: 0, child: Text('Newest first')),
+                        PopupMenuItem(value: 1, child: Text('Oldest first')),
+                        PopupMenuItem(value: 2, child: Text('Title A–Z')),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _filteredSessions.isEmpty
-              ? EmptyState(
-                  icon: Icons.archive_outlined,
-                  title: _searchController.text.isNotEmpty
-                      ? 'No matches for "${_searchController.text}"'
-                      : 'Archive is empty',
-                  body: 'Saved sessions appear here with reference hashes, citations, and speaker turns.',
-                )
-              : ListView.separated(
+          : Builder(
+              builder: (context) {
+                final sessions = _visibleSessions();
+                if (sessions.isEmpty) {
+                  return EmptyState(
+                    icon: Icons.archive_outlined,
+                    title: _searchController.text.isNotEmpty || _histFilter != 0
+                        ? 'No matching sessions'
+                        : 'Archive is empty',
+                    body: 'Saved sessions appear here with reference hashes, citations, and speaker turns.',
+                  );
+                }
+                return ListView.separated(
                   padding: const EdgeInsets.all(16),
-                  itemCount: _filteredSessions.length,
+                  itemCount: sessions.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
-                    final session = _filteredSessions[index];
+                    final session = sessions[index];
                     return Dismissible(
                       key: Key(session.id),
                       direction: DismissDirection.endToStart,
@@ -196,7 +257,7 @@ class _HistoryViewState extends State<HistoryView> {
                               runSpacing: 7,
                               children: [
                                 if (session.isDeIdentified)
-                                  StatusPill(icon: Icons.shield_outlined, label: 'HIPAA', color: theme.colorScheme.primary),
+                                  StatusPill(icon: Icons.shield_outlined, label: 'Masked', color: theme.colorScheme.primary),
                                 if (session.audioSha256 != null)
                                   StatusPill(icon: Icons.verified_outlined, label: 'SHA-256', color: theme.colorScheme.secondary),
                                 if (session.citations.isNotEmpty)
@@ -212,7 +273,9 @@ class _HistoryViewState extends State<HistoryView> {
                       ),
                     );
                   },
-                ),
+                );
+              },
+            ),
     );
   }
 }

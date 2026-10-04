@@ -82,7 +82,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   MeetingSession? _currentSession;
   late TabController _tabController;
   int _mobileNavIndex = 0;
-  int _mobileNotesTab = 0; // 0 Summary, 1 Transcript
+  int _deskIndex = 0; // desktop: 0 Record, 1..7 map to tabController 0..6
+  final TextEditingController _transcriptSearchController = TextEditingController();
+  String _transcriptQuery = '';
+  String? _transcriptSpeaker; // null = all speakers
+  int _taskFilter = 0; // 0 All, 1 Open, 2 Done, 3 High priority
+  int _mobileNotesTab = 0; // 0 Overview, 1 Transcript
   int _mobileTasksTab = 0; // 0 Protocols, 1 Speakers
   bool _isWaitingForAiChatResponse = false;
   bool _isMeetingCompactMode = false;
@@ -117,7 +122,13 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _transcriptEditController.text = session.transcript;
       _translatedSummary = null;
       _showTranslatedSummary = false;
+      _transcriptQuery = '';
+      _transcriptSpeaker = null;
+      _taskFilter = 0;
     });
+    if (MediaQuery.of(context).size.width >= 900) {
+      _selectDesk(1);
+    }
   }
 
   @override
@@ -151,8 +162,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       }
     });
 
-    // 7 Dashboards: Summary, Transcript, Protocols, Speakers & Dialog, PubChem Glossary, PubMed Citations, Q&A
+    // 7 review tabs: Overview, Transcript, Actions, Speakers, Compounds, Papers, Q&A
+    // (desktop Record destination is separate from the TabController)
     _tabController = TabController(length: 7, vsync: this);
+    _tabController.addListener(_syncDeskFromTab);
 
     // Enumerate connected microphones (Jabra, USB, AirPods, built-in)
     _loadAudioDevices();
@@ -169,6 +182,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     _pubchemSearchController.dispose();
     _pubmedSearchController.dispose();
     _transcriptEditController.dispose();
+    _transcriptSearchController.dispose();
+    _tabController.removeListener(_syncDeskFromTab);
     _tabController.dispose();
     super.dispose();
   }
@@ -1812,42 +1827,221 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  Widget _railDestination(ThemeData theme, int tabIndex, IconData icon, String label) {
-    final selected = _tabController.index == tabIndex;
+  void _syncDeskFromTab() {
+    // Keeps the desktop sidebar highlight in sync when the tab changes
+    // (e.g. swipe gestures). Ignored while the Record deck is shown.
+    if (_deskIndex != 0) {
+      final want = _tabController.index + 1;
+      if (_deskIndex != want && mounted) {
+        setState(() => _deskIndex = want);
+      }
+    }
+  }
+
+  void _selectDesk(int i) {
+    setState(() => _deskIndex = i);
+    if (i >= 1) _tabController.animateTo(i - 1);
+  }
+
+  int _wordCount(String s) => s.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+
+  /// Speaking seconds per display name, derived from diarized turns.
+  Map<String, int> _talkSeconds() {
+    final map = <String, int>{};
+    for (final turn in _currentSession?.speakerTurns ?? []) {
+      final dur = (turn.endSeconds - turn.startSeconds).clamp(0, 6 * 3600);
+      map[turn.speakerName] = (map[turn.speakerName] ?? 0) + dur;
+    }
+    return map;
+  }
+
+  Map<String, Color> _speakerColorMap() {
+    final map = <String, Color>{};
+    for (final turn in _currentSession?.speakerTurns ?? []) {
+      map.putIfAbsent(turn.speakerName, () => _getSpeakerColor(turn.speakerId));
+    }
+    return map;
+  }
+
+  List<TextSpan> _highlightSpans(String text, String query, TextStyle base, TextStyle hl) {
+    if (query.isEmpty) return [TextSpan(text: text, style: base)];
+    final spans = <TextSpan>[];
+    final lower = text.toLowerCase();
+    final q = query.toLowerCase();
+    int start = 0;
+    int idx;
+    while ((idx = lower.indexOf(q, start)) != -1) {
+      if (idx > start) {
+        spans.add(TextSpan(text: text.substring(start, idx), style: base));
+      }
+      spans.add(TextSpan(text: text.substring(idx, idx + q.length), style: hl));
+      start = idx + q.length;
+    }
+    if (start < text.length) {
+      spans.add(TextSpan(text: text.substring(start), style: base));
+    }
+    return spans;
+  }
+
+  Widget _momentRow(
+    ThemeData theme, {
+    required int seconds,
+    required String text,
+    required IconData icon,
+    required Color color,
+    VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                formatMS(seconds),
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, fontFeatures: [FontFeature.tabularFigures()]),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(9),
+                color: color.withValues(alpha: 0.12),
+              ),
+              child: Icon(icon, size: 14, color: color),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(text, style: const TextStyle(fontSize: 13, height: 1.4), maxLines: 2, overflow: TextOverflow.ellipsis),
+            ),
+            const Icon(Icons.chevron_right, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _deskNavEntry(ThemeData theme, int desk, IconData icon, String label, String? count, {bool expanded = false}) {
+    final selected = _deskIndex == desk;
+    if (!expanded) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _selectDesk(desk),
+          child: Container(
+            width: 68,
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            decoration: BoxDecoration(
+              color: selected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.6) : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
+              border: selected
+                  ? Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3))
+                  : null,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Badge(
+                  isLabelVisible: count != null && count.isNotEmpty,
+                  label: Text(count ?? ''),
+                  child: Icon(icon, size: 20, color: selected ? theme.colorScheme.primary : theme.colorScheme.outline),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    color: selected ? theme.colorScheme.onSurface : theme.colorScheme.outline,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 1),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => setState(() => _tabController.animateTo(tabIndex)),
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _selectDesk(desk),
         child: Container(
-          width: 68,
-          padding: const EdgeInsets.symmetric(vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           decoration: BoxDecoration(
             color: selected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.6) : Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
-            border: selected
-                ? Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3))
-                : null,
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
             children: [
-              Icon(icon, size: 20, color: selected ? theme.colorScheme.primary : theme.colorScheme.outline),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                  color: selected ? theme.colorScheme.onSurface : theme.colorScheme.outline,
+              Icon(icon, size: 19, color: selected ? theme.colorScheme.primary : theme.colorScheme.outline),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    color: selected ? theme.colorScheme.onSurface : theme.colorScheme.outline,
+                  ),
                 ),
-                textAlign: TextAlign.center,
               ),
+              if (count != null && count.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? theme.colorScheme.primary.withValues(alpha: 0.15)
+                        : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(count, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800)),
+                ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  String _openTaskCount() {
+    final tasks = _currentSession?.actionItems ?? [];
+    if (tasks.isEmpty) return '';
+    final open = tasks.where((e) => !e.isCompleted).length;
+    return open == 0 ? '${tasks.length}' : '$open/${tasks.length}';
+  }
+
+  List<Widget> _deskNavEntries(ThemeData theme, {required bool expanded}) {
+    final s = _currentSession;
+    String n(int v) => v == 0 ? '' : '$v';
+    return [
+      _deskNavEntry(theme, 0, Icons.mic_outlined, 'Record', null, expanded: expanded),
+      _deskNavEntry(theme, 1, Icons.summarize_outlined, 'Overview', null, expanded: expanded),
+      _deskNavEntry(theme, 2, Icons.description_outlined, 'Transcript', s == null || s.transcript.isEmpty ? '' : '${_wordCount(s.transcript)}w', expanded: expanded),
+      _deskNavEntry(theme, 3, Icons.fact_check_outlined, 'Actions', _openTaskCount(), expanded: expanded),
+      _deskNavEntry(theme, 4, Icons.record_voice_over_outlined, 'Speakers', n(s?.speakerTurns.length ?? 0), expanded: expanded),
+      _deskNavEntry(theme, 5, Icons.medication_liquid_outlined, 'Compounds', n(s?.glossaryTerms.length ?? 0), expanded: expanded),
+      _deskNavEntry(theme, 6, Icons.library_books_outlined, 'Papers', n(s?.citations.length ?? 0), expanded: expanded),
+      _deskNavEntry(theme, 7, Icons.forum_outlined, 'Ask', n(s?.chatHistory.length ?? 0), expanded: expanded),
+    ];
+  }
+
+  Widget _railDestination(ThemeData theme, int tabIndex, IconData icon, String label) {
+    // Legacy compact entry kept for compatibility; maps old tab indices to desk indices.
+    final desk = tabIndex + 1;
+    final icons = [Icons.summarize_outlined, Icons.description_outlined, Icons.fact_check_outlined, Icons.record_voice_over_outlined, Icons.medication_liquid_outlined, Icons.library_books_outlined, Icons.forum_outlined];
+    return _deskNavEntry(theme, desk, icons[tabIndex.clamp(0, 6)], label, null);
   }
 
   Widget _buildDesktopRail(ThemeData theme) {
@@ -1858,21 +2052,70 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         color: theme.colorScheme.surface,
         border: Border(right: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
       ),
-      child: AnimatedBuilder(
-        animation: _tabController,
-        builder: (context, _) => SingleChildScrollView(
-          child: Column(
-            children: [
-              _railDestination(theme, 0, Icons.summarize_outlined, 'Summary'),
-              _railDestination(theme, 1, Icons.description_outlined, 'Transcript'),
-              _railDestination(theme, 2, Icons.fact_check_outlined, 'Protocols'),
-              _railDestination(theme, 3, Icons.record_voice_over_outlined, 'Speakers'),
-              _railDestination(theme, 4, Icons.medication_liquid_outlined, 'Compounds'),
-              _railDestination(theme, 5, Icons.library_books_outlined, 'Papers'),
-              _railDestination(theme, 6, Icons.forum_outlined, 'Q&A'),
-            ],
-          ),
+      child: SingleChildScrollView(
+        child: Column(
+          children: _deskNavEntries(theme, expanded: false),
         ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopSidebar(BuildContext context, ThemeData theme) {
+    return Container(
+      width: 236,
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(right: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 2, 12, 8),
+            child: SectionLabel('Workspace'),
+          ),
+          ..._deskNavEntries(theme, expanded: true),
+          const Spacer(),
+          const Divider(height: 16),
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () async {
+              final selectedSession = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const HistoryView()),
+              );
+              if (selectedSession != null && selectedSession is MeetingSession) {
+                loadSession(selectedSession);
+                _selectDesk(1);
+              }
+            },
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              child: Row(
+                children: [
+                  Icon(Icons.archive_outlined, size: 19),
+                  SizedBox(width: 11),
+                  const Text('Archive', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ),
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => setState(() => _isMeetingCompactMode = !_isMeetingCompactMode),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              child: Row(
+                children: [
+                  Icon(_isMeetingCompactMode ? Icons.open_in_full : Icons.picture_in_picture_alt_outlined, size: 19),
+                  const SizedBox(width: 11),
+                  const Text('Compact dock', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1891,35 +2134,36 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     }
 
     if (isDesktop) {
+      final wide = MediaQuery.of(context).size.width >= 1200;
       return Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildDesktopRail(theme),
-          Container(
-            width: 372,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              border: Border(
-                right: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6)),
-              ),
-            ),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: _buildRecordingControlPanel(theme),
-            ),
-          ),
+          wide ? _buildDesktopSidebar(context, theme) : _buildDesktopRail(theme),
           Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildSummaryTab(theme),
-                _buildTranscriptTab(theme),
-                _buildTasksTab(theme),
-                _buildSpeakersTab(theme),
-                _buildGlossaryTab(theme),
-                _buildCitationsTab(theme),
-                _buildChatTab(theme),
-              ],
+            child: AnimatedBuilder(
+              animation: _tabController,
+              builder: (context, _) => _deskIndex == 0
+                  ? SingleChildScrollView(
+                      padding: const EdgeInsets.all(20),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 640),
+                          child: _buildRecordingControlPanel(theme),
+                        ),
+                      ),
+                    )
+                  : TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildSummaryTab(theme),
+                        _buildTranscriptTab(theme),
+                        _buildTasksTab(theme),
+                        _buildSpeakersTab(theme),
+                        _buildGlossaryTab(theme),
+                        _buildCitationsTab(theme),
+                        _buildChatTab(theme),
+                      ],
+                    ),
             ),
           ),
         ],
@@ -1977,7 +2221,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       children: [
         _segmentedHeader(
           theme,
-          ['Summary', 'Transcript'],
+          ['Overview', 'Transcript'],
           [Icons.summarize_outlined, Icons.description_outlined],
           _mobileNotesTab,
           (v) {
@@ -2564,16 +2808,17 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  // --- Intelligence Tab: Full Transcript & Multilingual Editor ---
+  // --- Tab 2: Transcript — searchable, speaker-filtered, timestamped ---
 
   Widget _buildTranscriptTab(ThemeData theme) {
     final transcript = _currentSession?.transcript ?? '';
+    final turns = _currentSession?.speakerTurns ?? [];
 
-    if (transcript.isEmpty) {
+    if (transcript.isEmpty && turns.isEmpty) {
       return EmptyState(
         icon: Icons.description_outlined,
         title: 'No transcript yet',
-        body: 'Record audio, import a Zoom / WhatsApp file, or paste notes to run biomedical transcription and AI synthesis.',
+        body: 'Record audio, import a meeting file, or paste notes to generate a timestamped, speaker-labeled transcript.',
         primaryLabel: 'Paste notes to analyze',
         onPrimary: _showPasteTranscriptDialog,
         secondaryLabel: 'Import audio file',
@@ -2581,144 +2826,284 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       );
     }
 
-    final wordCount = transcript.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
-    final estimatedMin = (wordCount / 140).toStringAsFixed(1);
-    final displayedText = (_showTranslatedTranscript && _translatedTranscript != null)
-        ? _translatedTranscript!
-        : transcript;
+    final speakers = turns.map((e) => e.speakerName).toSet().toList();
+    final q = _transcriptQuery.trim().toLowerCase();
+    final visible = turns.where((turn) {
+      if (_transcriptSpeaker != null && turn.speakerName != _transcriptSpeaker) return false;
+      if (q.isNotEmpty && !turn.text.toLowerCase().contains(q)) return false;
+      return true;
+    }).toList();
+    final hlBase = theme.textTheme.bodyLarge?.copyWith(height: 1.7, fontSize: 14) ?? const TextStyle(height: 1.7, fontSize: 14);
+    final hlStyle = TextStyle(backgroundColor: theme.colorScheme.tertiaryContainer, height: 1.7, fontSize: 14);
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 860),
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
+          ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Session transcript', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 7,
-                          runSpacing: 7,
-                          children: [
-                            StatusPill(icon: Icons.text_snippet_outlined, label: '$wordCount words · ~$estimatedMin min', color: theme.colorScheme.primary),
-                            if (_currentSession?.transcriptSha256 != null)
-                              StatusPill(icon: Icons.verified_outlined, label: 'Ref ${_currentSession!.transcriptSha256!.substring(0, 8)}', color: theme.colorScheme.secondary),
-                            if (_showTranslatedTranscript) StatusPill(icon: Icons.translate, label: 'Hindi view', color: theme.colorScheme.tertiary),
-                          ],
-                        ),
-                      ],
+                    child: TextField(
+                      controller: _transcriptSearchController,
+                      onChanged: (v) => setState(() => _transcriptQuery = v),
+                      decoration: InputDecoration(
+                        hintText: turns.isEmpty ? 'Transcript ready' : 'Search in transcript…',
+                        prefixIcon: const Icon(Icons.search, size: 18),
+                        suffixIcon: _transcriptQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 16),
+                                onPressed: () {
+                                  _transcriptSearchController.clear();
+                                  setState(() => _transcriptQuery = '');
+                                },
+                              )
+                            : null,
+                        isDense: true,
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Wrap(
-                    spacing: 7,
-                    runSpacing: 7,
-                    alignment: WrapAlignment.end,
-                    children: [
-                      OutlinedButton.icon(onPressed: _copyTranscriptToClipboard, icon: const Icon(Icons.copy_outlined, size: 14), label: const Text('Copy')),
-                      FilledButton.tonalIcon(onPressed: _showSaveTranscriptMenu, icon: const Icon(Icons.save_alt_outlined, size: 14), label: const Text('Save')),
-                      OutlinedButton.icon(
-                        onPressed: _toggleEditTranscript,
-                        icon: Icon(_isTranscriptEditMode ? Icons.visibility_outlined : Icons.edit_note_outlined, size: 14),
-                        label: Text(_isTranscriptEditMode ? 'View' : 'Edit'),
-                      ),
-                      FilledButton.icon(
-                        onPressed: _isTranslatingTranscript ? null : _toggleTranslateTranscript,
-                        icon: _isTranslatingTranscript
-                            ? const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.translate, size: 14),
-                        label: Text(_showTranslatedTranscript ? 'Original' : 'Hindi'),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(width: 8),
+                  if (turns.isNotEmpty)
+                    Text(
+                      q.isEmpty ? '${turns.length} turns' : '${visible.length}/${turns.length}',
+                      style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline, fontWeight: FontWeight.w700),
+                    ),
                 ],
               ),
-              const SizedBox(height: 14),
-              if (_showTranslatedTranscript && _translatedTranscript != null)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.g_translate, color: theme.colorScheme.primary, size: 17),
-                      const SizedBox(width: 8),
-                      const Expanded(child: Text('Hindi biomedical translation · gene & drug casing preserved', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                      TextButton(onPressed: () => setState(() => _showTranslatedTranscript = false), child: const Text('Original', style: TextStyle(fontSize: 12))),
-                    ],
-                  ),
-                ),
-              if (_isTranscriptEditMode) ...[
-                LabCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SectionLabel('Edit transcript'),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _transcriptEditController,
-                        maxLines: 14,
-                        style: const TextStyle(fontSize: 13.5, height: 1.6, fontFamily: 'monospace'),
-                        decoration: const InputDecoration(hintText: 'Paste or edit transcript here...'),
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        alignment: WrapAlignment.end,
-                        spacing: 8,
-                        children: [
-                          TextButton(onPressed: () => setState(() => _isTranscriptEditMode = false), child: const Text('Cancel')),
-                          FilledButton.tonalIcon(onPressed: _saveEditedTranscript, icon: const Icon(Icons.check, size: 15), label: const Text('Save & update hash')),
-                          FilledButton.icon(onPressed: () => _processTextDirectly(_transcriptEditController.text), icon: const Icon(Icons.auto_awesome, size: 15), label: const Text('Run AI analysis')),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ] else ...[
-                LabCard(
-                  color: theme.colorScheme.surfaceContainerLowest,
-                  padding: const EdgeInsets.all(22),
-                  child: SelectableText(
-                    displayedText,
-                    style: theme.textTheme.bodyLarge?.copyWith(height: 1.75, letterSpacing: 0.15, fontSize: 14.5),
+              if (speakers.length > 1) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 34,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: speakers.length + 1,
+                    separatorBuilder: (_, __) => const SizedBox(width: 7),
+                    itemBuilder: (context, i) {
+                      if (i == 0) {
+                        return ChoiceChip(
+                          label: const Text('All speakers', style: TextStyle(fontSize: 12)),
+                          selected: _transcriptSpeaker == null,
+                          onSelected: (_) => setState(() => _transcriptSpeaker = null),
+                          visualDensity: VisualDensity.compact,
+                        );
+                      }
+                      final name = speakers[i - 1];
+                      return ChoiceChip(
+                        avatar: CircleAvatar(
+                          radius: 9,
+                          backgroundColor: _getSpeakerColor(name).withValues(alpha: 0.2),
+                          child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(fontSize: 9)),
+                        ),
+                        label: Text(name, style: const TextStyle(fontSize: 12)),
+                        selected: _transcriptSpeaker == name,
+                        onSelected: (_) => setState(() => _transcriptSpeaker = _transcriptSpeaker == name ? null : name),
+                        visualDensity: VisualDensity.compact,
+                      );
+                    },
                   ),
                 ),
               ],
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: [
+                  if (_currentSession?.transcriptSha256 != null)
+                    StatusPill(icon: Icons.verified_outlined, label: 'Ref ${_currentSession!.transcriptSha256!.substring(0, 8)}', color: theme.colorScheme.secondary),
+                  if (_showTranslatedTranscript) StatusPill(icon: Icons.translate, label: 'Translated view', color: theme.colorScheme.tertiary),
+                  const Spacer(),
+                  OutlinedButton.icon(
+                    onPressed: _copyTranscriptToClipboard,
+                    icon: const Icon(Icons.copy_outlined, size: 13),
+                    label: const Text('Copy', style: TextStyle(fontSize: 12)),
+                    style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _toggleEditTranscript,
+                    icon: Icon(_isTranscriptEditMode ? Icons.visibility_outlined : Icons.edit_note_outlined, size: 13),
+                    label: Text(_isTranscriptEditMode ? 'View' : 'Edit', style: const TextStyle(fontSize: 12)),
+                    style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _showSaveTranscriptMenu,
+                    icon: const Icon(Icons.save_alt_outlined, size: 13),
+                    label: const Text('Save', style: TextStyle(fontSize: 12)),
+                    style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                  ),
+                  FilledButton.icon(
+                    onPressed: _isTranslatingTranscript ? null : _toggleTranslateTranscript,
+                    icon: _isTranslatingTranscript
+                        ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.translate, size: 13),
+                    label: Text(_showTranslatedTranscript ? 'Original' : 'Translate', style: const TextStyle(fontSize: 12)),
+                    style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
-      ),
+        if (_showTranslatedTranscript && _translatedTranscript != null)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.g_translate, color: theme.colorScheme.primary, size: 16),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('Translated view · gene and drug casing preserved', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                TextButton(onPressed: () => setState(() => _showTranslatedTranscript = false), child: const Text('Original', style: TextStyle(fontSize: 12))),
+              ],
+            ),
+          ),
+        Expanded(
+          child: _isTranscriptEditMode
+              ? SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 860),
+                      child: LabCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const SectionLabel('Edit transcript'),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: _transcriptEditController,
+                              maxLines: 14,
+                              style: const TextStyle(fontSize: 13.5, height: 1.6, fontFamily: 'monospace'),
+                              decoration: const InputDecoration(hintText: 'Paste or edit transcript here...'),
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              alignment: WrapAlignment.end,
+                              spacing: 8,
+                              children: [
+                                TextButton(onPressed: () => setState(() => _isTranscriptEditMode = false), child: const Text('Cancel')),
+                                FilledButton.tonalIcon(onPressed: _saveEditedTranscript, icon: const Icon(Icons.check, size: 15), label: const Text('Save & update hash')),
+                                FilledButton.icon(onPressed: () => _processTextDirectly(_transcriptEditController.text), icon: const Icon(Icons.auto_awesome, size: 15), label: const Text('Run AI analysis')),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : turns.isNotEmpty
+                  ? (visible.isEmpty
+                      ? Center(child: Text('No turns match the current search or speaker filter.', style: TextStyle(color: theme.colorScheme.outline)))
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(20),
+                          itemCount: visible.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 4),
+                          itemBuilder: (context, index) {
+                            final turn = visible[index];
+                            final color = _getSpeakerColor(turn.speakerId);
+                            return InkWell(
+                              onTap: () => _seekAudio(turn.startSeconds),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Column(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 13,
+                                          backgroundColor: color.withValues(alpha: 0.15),
+                                          child: Text(
+                                            turn.speakerName.isNotEmpty ? turn.speakerName[0].toUpperCase() : 'S',
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: color),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          formatMS(turn.startSeconds),
+                                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: theme.colorScheme.secondary, fontFeatures: const [FontFeature.tabularFigures()]),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(turn.speakerName, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: color)),
+                                          const SizedBox(height: 3),
+                                          RichText(text: TextSpan(children: _highlightSpans(turn.text, q, hlBase, hlStyle))),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ))
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(20),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 860),
+                          child: LabCard(
+                            color: theme.colorScheme.surfaceContainerLowest,
+                            padding: const EdgeInsets.all(22),
+                            child: SelectableText(
+                              (_showTranslatedTranscript && _translatedTranscript != null) ? _translatedTranscript! : transcript,
+                              style: theme.textTheme.bodyLarge?.copyWith(height: 1.75, letterSpacing: 0.15, fontSize: 14.5),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+        ),
+      ],
     );
   }
 
-  // --- Intelligence Tab 1: Scientific Summary ---
+  // --- Tab 1: Session Overview — stats, talk time, moments, synthesis ---
 
   Widget _buildSummaryTab(ThemeData theme) {
     final summary = _currentSession?.summary;
-    if (summary == null) {
+    final turns = _currentSession?.speakerTurns ?? [];
+    final transcript = _currentSession?.transcript ?? '';
+    final words = _wordCount(transcript);
+    final tasks = _currentSession?.actionItems ?? [];
+    final done = tasks.where((e) => e.isCompleted).length;
+    final talk = _talkSeconds();
+    final colors = _speakerColorMap();
+    final uniqueSpeakers = talk.keys.toList();
+
+    if (summary == null && transcript.isEmpty && turns.isEmpty) {
       final hasAudio = _recordedAudioPath != null || (_currentSession?.audioPath?.isNotEmpty == true);
       return EmptyState(
         icon: Icons.science_outlined,
         title: 'No synthesis yet',
         body: hasAudio
-            ? 'Audio is ready. Run the biomedical pipeline to extract hypothesis, findings, protocols, compounds and citations.'
-            : 'Record, import or paste a session, then synthesize hypotheses, assays and bench tasks.',
+            ? 'Audio is ready. Run the analysis pipeline to extract a summary, tasks, speaker labels, and references.'
+            : 'Record, import, or paste a session, then synthesize findings, assays, and bench tasks.',
         primaryLabel: hasAudio ? 'Synthesize with AI' : 'Paste notes to analyze',
         onPrimary: hasAudio ? _executeAiPipeline : _showPasteTranscriptDialog,
       );
     }
+
+    final notes = [...(_currentSession?.liveNotes ?? [])]..sort((a, b) => a.timestampSeconds.compareTo(b.timestampSeconds));
+    final figs = [...(_currentSession?.slideAttachments ?? [])]..sort((a, b) => a.timestampSeconds.compareTo(b.timestampSeconds));
+    final momentCount = notes.length + figs.length;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -2731,196 +3116,232 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Expanded(child: Text('Executive synthesis', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20))),
-                  OutlinedButton.icon(
-                    onPressed: _isTranslatingSummary ? null : _toggleTranslateSummary,
-                    icon: _isTranslatingSummary
-                        ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.translate, size: 13),
-                    label: Text(_showTranslatedSummary ? 'English' : 'Hindi', style: const TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Session overview', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 7,
+                          runSpacing: 7,
+                          children: [
+                            StatusPill(icon: Icons.timer_outlined, label: formatHMS(_currentSession?.durationSeconds ?? _recordDurationSeconds), color: theme.colorScheme.primary),
+                            if (words > 0) StatusPill(icon: Icons.text_snippet_outlined, label: '$words words', color: theme.colorScheme.primary),
+                            if (_currentSession?.transcriptSha256 != null)
+                              StatusPill(icon: Icons.verified_outlined, label: 'Ref ${_currentSession!.transcriptSha256!.substring(0, 8)}', color: theme.colorScheme.secondary),
+                            if (_currentSession?.isVirtualCall == true)
+                              StatusPill(icon: Icons.video_call_outlined, label: 'Call import', color: theme.colorScheme.secondary),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(width: 8),
-                  StatusPill(icon: Icons.language_outlined, label: summary.detectedLanguage.split('/').first.trim(), color: theme.colorScheme.primary),
+                  if (summary != null)
+                    OutlinedButton.icon(
+                      onPressed: _isTranslatingSummary ? null : _toggleTranslateSummary,
+                      icon: _isTranslatingSummary
+                          ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.translate, size: 13),
+                      label: Text(_showTranslatedSummary ? 'English' : 'Translate', style: const TextStyle(fontSize: 12)),
+                      style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                    ),
                 ],
               ),
-              const SizedBox(height: 12),
-              if (_currentSession?.audioSha256 != null || _currentSession?.transcriptSha256 != null)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.secondary.withValues(alpha: 0.07),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: theme.colorScheme.secondary.withValues(alpha: 0.3)),
-                  ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  MetricTile(icon: Icons.record_voice_over_outlined, value: '${uniqueSpeakers.isEmpty ? turns.map((e) => e.speakerName).toSet().length : uniqueSpeakers.length}', label: 'Speakers', color: theme.colorScheme.primary),
+                  const SizedBox(width: 10),
+                  MetricTile(icon: Icons.fact_check_outlined, value: tasks.isEmpty ? '–' : '$done/${tasks.length}', label: 'Tasks done', color: theme.colorScheme.tertiary),
+                  const SizedBox(width: 10),
+                  MetricTile(icon: Icons.medication_liquid_outlined, value: '${_currentSession?.glossaryTerms.length ?? 0}', label: 'Compounds', color: theme.colorScheme.secondary),
+                  const SizedBox(width: 10),
+                  MetricTile(icon: Icons.library_books_outlined, value: '${_currentSession?.citations.length ?? 0}', label: 'Papers', color: theme.colorScheme.secondary),
+                ],
+              ),
+              if (talk.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                LabCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Icon(Icons.verified, size: 15, color: theme.colorScheme.secondary),
-                          const SizedBox(width: 6),
-                          Text('INTEGRITY REFERENCES', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5, letterSpacing: 1.0, color: theme.colorScheme.secondary)),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      if (_currentSession?.audioSha256 != null)
-                        Row(
-                          children: [
-                            const Text('Audio  ', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11)),
-                            Expanded(child: Text(_currentSession!.audioSha256!, style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis)),
-                            IconButton(
-                              icon: const Icon(Icons.copy_outlined, size: 14),
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () {
-                                Clipboard.setData(ClipboardData(text: _currentSession!.audioSha256!));
-                                _showSnackBar('Audio SHA-256 copied');
-                              },
-                            ),
-                          ],
-                        ),
-                      if (_currentSession?.transcriptSha256 != null)
-                        Row(
-                          children: [
-                            const Text('Transcript  ', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11)),
-                            Expanded(child: Text(_currentSession!.transcriptSha256!, style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis)),
-                            IconButton(
-                              icon: const Icon(Icons.copy_outlined, size: 14),
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () {
-                                Clipboard.setData(ClipboardData(text: _currentSession!.transcriptSha256!));
-                                _showSnackBar('Transcript SHA-256 copied');
-                              },
-                            ),
-                          ],
-                        ),
+                      const SectionLabel('Talk time', icon: Icons.pie_chart_outline),
+                      const SizedBox(height: 10),
+                      TalkTimeBar(secondsBySpeaker: talk, colorBySpeaker: colors),
                     ],
                   ),
                 ),
-              if (summary.scientificHypothesis.isNotEmpty) ...[
-                Container(
-                  padding: const EdgeInsets.all(15),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              ],
+              if (momentCount > 0) ...[
+                const SizedBox(height: 16),
+                SectionLabel('Key moments · $momentCount', icon: Icons.bolt_outlined),
+                const SizedBox(height: 8),
+                LabCard(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  child: Column(
                     children: [
-                      Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(borderRadius: BorderRadius.circular(11), color: theme.colorScheme.primary.withValues(alpha: 0.15)),
-                        child: Icon(Icons.lightbulb_outline, color: theme.colorScheme.primary, size: 18),
+                      ...notes.take(8).map((note) => _momentRow(
+                            theme,
+                            seconds: note.timestampSeconds,
+                            text: note.note,
+                            icon: Icons.bookmark_outline,
+                            color: theme.colorScheme.tertiary,
+                            onTap: () => _seekAudio(note.timestampSeconds),
+                          )),
+                      ...figs.take(4).map((slide) => _momentRow(
+                            theme,
+                            seconds: slide.timestampSeconds,
+                            text: slide.caption.isEmpty ? 'Attached figure' : slide.caption,
+                            icon: Icons.image_outlined,
+                            color: theme.colorScheme.primary,
+                            onTap: () => _showFigureLightbox(slide),
+                          )),
+                    ],
+                  ),
+                ),
+              ],
+              if (summary == null) ...[
+                const SizedBox(height: 16),
+                LabCard(
+                  child: Row(
+                    children: [
+                      Icon(Icons.auto_awesome_outlined, color: theme.colorScheme.primary),
+                      const SizedBox(width: 12),
+                      const Expanded(child: Text('Transcript available. Run synthesis for summary, findings, and decisions.', style: TextStyle(fontSize: 13))),
+                      FilledButton.tonalIcon(
+                        onPressed: _executeAiPipeline,
+                        icon: const Icon(Icons.auto_awesome, size: 15),
+                        label: const Text('Synthesize'),
                       ),
-                      const SizedBox(width: 11),
-                      Expanded(
-                        child: Column(
+                    ],
+                  ),
+                ),
+              ] else ...[
+                const SizedBox(height: 16),
+                if (_currentSession?.audioSha256 != null || _currentSession?.transcriptSha256 != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.secondary.withValues(alpha: 0.07),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: theme.colorScheme.secondary.withValues(alpha: 0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.verified_outlined, size: 15, color: theme.colorScheme.secondary),
+                            const SizedBox(width: 6),
+                            Text('INTEGRITY REFERENCES', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5, letterSpacing: 1.0, color: theme.colorScheme.secondary)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        if (_currentSession?.audioSha256 != null)
+                          Row(
+                            children: [
+                              const Text('Audio  ', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11)),
+                              Expanded(child: Text(_currentSession!.audioSha256!, style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis)),
+                              IconButton(
+                                icon: const Icon(Icons.copy_outlined, size: 14),
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () {
+                                  Clipboard.setData(ClipboardData(text: _currentSession!.audioSha256!));
+                                  _showSnackBar('Audio reference copied');
+                                },
+                              ),
+                            ],
+                          ),
+                        if (_currentSession?.transcriptSha256 != null)
+                          Row(
+                            children: [
+                              const Text('Transcript  ', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11)),
+                              Expanded(child: Text(_currentSession!.transcriptSha256!, style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis)),
+                              IconButton(
+                                icon: const Icon(Icons.copy_outlined, size: 14),
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () {
+                                  Clipboard.setData(ClipboardData(text: _currentSession!.transcriptSha256!));
+                                  _showSnackBar('Transcript reference copied');
+                                },
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                if (summary.scientificHypothesis.isNotEmpty) ...[
+                  Container(
+                    padding: const EdgeInsets.all(15),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(borderRadius: BorderRadius.circular(11), color: theme.colorScheme.primary.withValues(alpha: 0.15)),
+                          child: Icon(Icons.lightbulb_outline, color: theme.colorScheme.primary, size: 18),
+                        ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('HYPOTHESIS', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5, letterSpacing: 1.1, color: theme.colorScheme.primary)),
+                              const SizedBox(height: 4),
+                              Text(summary.scientificHypothesis, style: const TextStyle(fontSize: 13.5, height: 1.5)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                LabCard(
+                  padding: const EdgeInsets.all(18),
+                  child: Text(
+                    (_showTranslatedSummary && _translatedSummary != null) ? _translatedSummary! : summary.executiveSummary,
+                    style: theme.textTheme.bodyLarge?.copyWith(height: 1.6),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                SectionLabel('Key findings', icon: Icons.query_stats_outlined),
+                const SizedBox(height: 8),
+                ...summary.keyPoints.map((point) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: LabCard(
+                        padding: const EdgeInsets.all(13),
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('HYPOTHESIS', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5, letterSpacing: 1.1, color: theme.colorScheme.primary)),
-                            const SizedBox(height: 4),
-                            Text(summary.scientificHypothesis, style: const TextStyle(fontSize: 13.5, height: 1.5)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-              LabCard(
-                padding: const EdgeInsets.all(18),
-                child: Text(
-                  (_showTranslatedSummary && _translatedSummary != null) ? _translatedSummary! : summary.executiveSummary,
-                  style: theme.textTheme.bodyLarge?.copyWith(height: 1.6),
-                ),
-              ),
-              const SizedBox(height: 18),
-              SectionLabel('Key findings', icon: Icons.query_stats_outlined),
-              const SizedBox(height: 8),
-              ...summary.keyPoints.map((point) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: LabCard(
-                      padding: const EdgeInsets.all(13),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.check_circle_outline, size: 18, color: theme.colorScheme.primary),
-                          const SizedBox(width: 10),
-                          Expanded(child: Text(point, style: const TextStyle(fontSize: 13.2, height: 1.5))),
-                        ],
-                      ),
-                    ),
-                  )),
-              const SizedBox(height: 12),
-              SectionLabel('Protocol decisions', icon: Icons.gavel_outlined),
-              const SizedBox(height: 8),
-              ...summary.decisionsMade.map((decision) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: LabCard(
-                      padding: const EdgeInsets.all(13),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.gavel_outlined, size: 17, color: theme.colorScheme.secondary),
-                          const SizedBox(width: 10),
-                          Expanded(child: Text(decision, style: const TextStyle(fontSize: 13.2, height: 1.5))),
-                        ],
-                      ),
-                    ),
-                  )),
-              if (_currentSession?.liveNotes.isNotEmpty == true) ...[
-                const SizedBox(height: 12),
-                SectionLabel('Live annotations · ${_currentSession!.liveNotes.length}', icon: Icons.bookmark_outline),
-                const SizedBox(height: 8),
-                ..._currentSession!.liveNotes.map((note) => Padding(
-                      padding: const EdgeInsets.only(bottom: 7),
-                      child: LabCard(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(color: theme.colorScheme.tertiary.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(8)),
-                              child: Text(formatMS(note.timestampSeconds), style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: theme.colorScheme.tertiary, fontFeatures: const [FontFeature.tabularFigures()])),
-                            ),
+                            Icon(Icons.check_circle_outline, size: 18, color: theme.colorScheme.primary),
                             const SizedBox(width: 10),
-                            Expanded(child: Text(note.note, style: const TextStyle(fontSize: 13))),
+                            Expanded(child: Text(point, style: const TextStyle(fontSize: 13.2, height: 1.5))),
                           ],
                         ),
                       ),
                     )),
-              ],
-              if (_currentSession?.slideAttachments.isNotEmpty == true) ...[
                 const SizedBox(height: 12),
-                SectionLabel('Figures · tap to inspect', icon: Icons.image_outlined),
+                SectionLabel('Protocol decisions', icon: Icons.gavel_outlined),
                 const SizedBox(height: 8),
-                ..._currentSession!.slideAttachments.map((slide) => Padding(
-                      padding: const EdgeInsets.only(bottom: 7),
+                ...summary.decisionsMade.map((decision) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: LabCard(
-                        onTap: () => _showFigureLightbox(slide),
+                        padding: const EdgeInsets.all(13),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: theme.colorScheme.primary.withValues(alpha: 0.12)),
-                              child: Icon(Icons.zoom_in, color: theme.colorScheme.primary, size: 18),
-                            ),
-                            const SizedBox(width: 11),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(slide.caption, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                                  Text('Logged at ${formatHMS(slide.timestampSeconds)}', style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline)),
-                                ],
-                              ),
-                            ),
-                            const Icon(Icons.chevron_right, size: 18),
+                            Icon(Icons.gavel_outlined, size: 17, color: theme.colorScheme.secondary),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text(decision, style: const TextStyle(fontSize: 13.2, height: 1.5))),
                           ],
                         ),
                       ),
@@ -2933,121 +3354,152 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  // --- Intelligence Tab 2: Protocols & Tasks ---
+  // --- Tab 3: Actions — filterable bench task list ---
 
   Widget _buildTasksTab(ThemeData theme) {
-    final tasks = _currentSession?.actionItems ?? [];
-    if (tasks.isEmpty) {
+    final all = _currentSession?.actionItems ?? [];
+    if (all.isEmpty) {
       return const EmptyState(
         icon: Icons.fact_check_outlined,
         title: 'No bench tasks yet',
-        body: 'Run AI synthesis to extract assays, reagent orders, IRB steps and manuscript tasks with owners and priorities.',
+        body: 'Run analysis to extract assays, reagent orders, and follow-ups with owners and priorities.',
       );
     }
 
-    final done = tasks.where((e) => e.isCompleted).length;
+    final done = all.where((e) => e.isCompleted).length;
+    final tasks = all.where((item) {
+      switch (_taskFilter) {
+        case 1:
+          return !item.isCompleted;
+        case 2:
+          return item.isCompleted;
+        case 3:
+          return item.priority.toLowerCase() == 'high';
+        default:
+          return true;
+      }
+    }).toList();
     Color prioColor(String p) {
       if (p.toLowerCase() == 'high') return theme.colorScheme.error;
       if (p.toLowerCase() == 'medium') return theme.colorScheme.tertiary;
       return theme.colorScheme.secondary;
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(20),
-      itemCount: tasks.length + 1,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          return Column(
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+          alignment: Alignment.centerLeft,
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  const Expanded(child: Text('Bench protocols', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 19))),
-                  StatusPill(icon: Icons.task_alt_outlined, label: '$done/${tasks.length} done', color: theme.colorScheme.primary),
+                  const Expanded(child: Text('Bench tasks', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 19))),
+                  StatusPill(icon: Icons.task_alt_outlined, label: '$done/${all.length} done', color: theme.colorScheme.primary),
                 ],
               ),
               const SizedBox(height: 8),
               ClipRRect(
                 borderRadius: BorderRadius.circular(99),
-                child: LinearProgressIndicator(value: tasks.isEmpty ? 0 : done / tasks.length, minHeight: 6),
+                child: LinearProgressIndicator(value: all.isEmpty ? 0 : done / all.length, minHeight: 6),
               ),
-              const SizedBox(height: 6),
-            ],
-          );
-        }
-        final item = tasks[index - 1];
-        final pc = prioColor(item.priority);
-        return LabCard(
-          padding: const EdgeInsets.all(13),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Checkbox(
-                value: item.isCompleted,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-                onChanged: (val) {
-                  setState(() {
-                    item.isCompleted = val ?? false;
-                  });
-                  if (_currentSession != null) {
-                    SessionRepository().saveSession(_currentSession!);
-                  }
-                },
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.task,
-                      style: TextStyle(
-                        decoration: item.isCompleted ? TextDecoration.lineThrough : null,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13.5,
-                        height: 1.4,
-                        color: item.isCompleted ? theme.colorScheme.outline : theme.colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 7,
-                      runSpacing: 7,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        StatusPill(icon: Icons.science_outlined, label: item.category, color: theme.colorScheme.primary),
-                        StatusPill(icon: Icons.flag_outlined, label: item.priority, color: pc),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircleAvatar(
-                              radius: 10,
-                              backgroundColor: theme.colorScheme.secondaryContainer,
-                              child: Text(item.assignee.isNotEmpty ? item.assignee[0].toUpperCase() : '?', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800)),
-                            ),
-                            const SizedBox(width: 5),
-                            Text(item.assignee, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
-                          ],
-                        ),
-                        if (item.speaker != null) Text('by ${item.speaker}', style: const TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: Colors.grey)),
-                        if (item.deadline != null)
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.calendar_today_outlined, size: 12, color: Colors.orange),
-                              const SizedBox(width: 4),
-                              Text(item.deadline!, style: const TextStyle(color: Colors.orange, fontSize: 11.5, fontWeight: FontWeight.w700)),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 7,
+                children: [
+                  ChoiceChip(label: const Text('All', style: TextStyle(fontSize: 12)), selected: _taskFilter == 0, onSelected: (_) => setState(() => _taskFilter = 0), visualDensity: VisualDensity.compact),
+                  ChoiceChip(label: const Text('Open', style: TextStyle(fontSize: 12)), selected: _taskFilter == 1, onSelected: (_) => setState(() => _taskFilter = 1), visualDensity: VisualDensity.compact),
+                  ChoiceChip(label: const Text('Done', style: TextStyle(fontSize: 12)), selected: _taskFilter == 2, onSelected: (_) => setState(() => _taskFilter = 2), visualDensity: VisualDensity.compact),
+                  ChoiceChip(label: const Text('High priority', style: TextStyle(fontSize: 12)), selected: _taskFilter == 3, onSelected: (_) => setState(() => _taskFilter = 3), visualDensity: VisualDensity.compact),
+                ],
               ),
             ],
           ),
-        );
-      },
+        ),
+        Expanded(
+          child: tasks.isEmpty
+              ? Center(child: Text('No tasks match this filter.', style: TextStyle(color: theme.colorScheme.outline)))
+              : ListView.separated(
+                  padding: const EdgeInsets.all(20),
+                  itemCount: tasks.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final item = tasks[index];
+                    final pc = prioColor(item.priority);
+                    return LabCard(
+                      padding: const EdgeInsets.all(13),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Checkbox(
+                            value: item.isCompleted,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                            onChanged: (val) {
+                              setState(() {
+                                item.isCompleted = val ?? false;
+                              });
+                              if (_currentSession != null) {
+                                SessionRepository().saveSession(_currentSession!);
+                              }
+                            },
+                          ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.task,
+                                  style: TextStyle(
+                                    decoration: item.isCompleted ? TextDecoration.lineThrough : null,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13.5,
+                                    height: 1.4,
+                                    color: item.isCompleted ? theme.colorScheme.outline : theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 7,
+                                  runSpacing: 7,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    StatusPill(icon: Icons.science_outlined, label: item.category, color: theme.colorScheme.primary),
+                                    StatusPill(icon: Icons.flag_outlined, label: item.priority, color: pc),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 10,
+                                          backgroundColor: theme.colorScheme.secondaryContainer,
+                                          child: Text(item.assignee.isNotEmpty ? item.assignee[0].toUpperCase() : '?', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800)),
+                                        ),
+                                        const SizedBox(width: 5),
+                                        Text(item.assignee, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                                      ],
+                                    ),
+                                    if (item.speaker != null) Text('by ${item.speaker}', style: const TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: Colors.grey)),
+                                    if (item.deadline != null)
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.calendar_today_outlined, size: 12, color: Colors.orange),
+                                          const SizedBox(width: 4),
+                                          Text(item.deadline!, style: const TextStyle(color: Colors.orange, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                                        ],
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
@@ -3208,31 +3660,85 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       );
     }
 
-    final uniqueSpeakers = turns.map((t) => t.speakerName).toSet().toList();
-
     return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.people_alt_outlined, size: 18, color: theme.colorScheme.primary),
-              const SizedBox(width: 8),
-              Text('${uniqueSpeakers.length} speakers', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-              Text(' · ${turns.length} turns', style: TextStyle(fontSize: 12, color: theme.colorScheme.outline)),
-              if (_currentSession?.isVirtualCall == true) ...[
-                const SizedBox(width: 10),
-                StatusPill(icon: Icons.video_call_outlined, label: 'Virtual call', color: theme.colorScheme.secondary),
-              ],
-              const Spacer(),
-              Text('Tap name to rename', style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: theme.colorScheme.outline)),
-            ],
-          ),
+        Builder(
+          builder: (context) {
+            final talk = _talkSeconds();
+            final colors = _speakerColorMap();
+            final total = talk.values.fold<int>(0, (a, b) => a + b);
+            final names = talk.keys.toList()..sort((a, b) => talk[b]!.compareTo(talk[a]!));
+            int wordsOf(String name) => turns.where((e) => e.speakerName == name).fold(0, (a, e) => a + _wordCount(e.text));
+            int turnsOf(String name) => turns.where((e) => e.speakerName == name).length;
+            return Container(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.6))),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.people_alt_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Text('${names.length} speakers', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                      Text(' · ${turns.length} turns', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline)),
+                      if (_currentSession?.isVirtualCall == true) ...[
+                        const SizedBox(width: 10),
+                        StatusPill(icon: Icons.video_call_outlined, label: 'Call import', color: Theme.of(context).colorScheme.secondary),
+                      ],
+                      const Spacer(),
+                      Text('Tap name to rename', style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Theme.of(context).colorScheme.outline)),
+                    ],
+                  ),
+                  if (total > 0) ...[
+                    const SizedBox(height: 10),
+                    TalkTimeBar(secondsBySpeaker: talk, colorBySpeaker: colors),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: names.map((name) {
+                        final color = colors[name] ?? Theme.of(context).colorScheme.primary;
+                        final pct = total == 0 ? 0 : (talk[name]! / total * 100).round();
+                        final first = turns.firstWhere((e) => e.speakerName == name);
+                        return InkWell(
+                          onTap: () => _showRenameSpeakerDialog(first.speakerId, name),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surfaceContainerLow,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.6)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircleAvatar(
+                                  radius: 11,
+                                  backgroundColor: color.withValues(alpha: 0.15),
+                                  child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'S', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+                                ),
+                                const SizedBox(width: 7),
+                                Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                                const SizedBox(width: 7),
+                                Text('${turnsOf(name)} turns · ${wordsOf(name)}w · $pct%', style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline)),
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
         ),
+
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.all(20),

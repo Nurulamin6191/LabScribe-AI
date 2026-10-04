@@ -339,8 +339,7 @@ class BrandMark extends StatelessWidget {
 }
 
 /// Grouped settings row (icon + title + subtitle + trailing switch/action).
-class SettingRow extends StatelessWidget {
-  final IconData icon;
+class SettingRow extends StatelessWidget {  final IconData icon;
   final Color iconColor;
   final String title;
   final String subtitle;
@@ -389,3 +388,64 @@ class SettingRow extends StatelessWidget {
     );
   }
 }
+
+/// Horizontal stacked bar showing speaking-time share per participant,
+/// in the style of Gong/Fireflies talk-time analytics.
+class TalkTimeBar extends StatelessWidget {
+  final Map<String, int> secondsBySpeaker;
+  final Map<String, Color> colorBySpeaker;
+  const TalkTimeBar({
+    super.key,
+    required this.secondsBySpeaker,
+    required this.colorBySpeaker,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final total = secondsBySpeaker.values.fold<int>(0, (a, b) => a + b);
+    if (total <= 0) return const SizedBox.shrink();
+    final entries = secondsBySpeaker.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(99),
+          child: Row(
+            children: entries.map((e) {
+              final frac = e.value / total;
+              final color = colorBySpeaker[e.key] ?? theme.colorScheme.primary;
+              return Expanded(
+                flex: (frac * 1000).round().clamp(1, 1000),
+                child: Container(height: 8, color: color),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 12,
+          runSpacing: 6,
+          children: entries.map((e) {
+            final color = colorBySpeaker[e.key] ?? theme.colorScheme.primary;
+            final pct = (e.value / total * 100).round();
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
+                const SizedBox(width: 5),
+                Text(
+                  '${e.key} · $pct%',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+}
+
