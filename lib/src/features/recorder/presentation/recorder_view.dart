@@ -890,6 +890,30 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         _statusMessage = 'Step 1: Transcribing audio...';
       });
 
+      // 0. Pre-flight: is there actually recordable audio on disk?
+      // A missing/tiny file means a microphone problem, not a model problem —
+      // say so directly instead of running inference on silence.
+      if (audioPath != null && audioPath.isNotEmpty) {
+        final audioFile = File(audioPath);
+        final exists = await audioFile.exists();
+        final bytes = exists ? await audioFile.length() : 0;
+        if (!exists || bytes < 8000) {
+          setState(() {
+            _processingStage = ProcessingStage.idle;
+            _statusMessage = 'Recording file is missing or nearly empty.';
+          });
+          _showNoSpeechDialog(
+            detail: exists
+                ? 'The audio file is only ${(bytes / 1024).toStringAsFixed(1)} KB — '
+                    'the microphone likely captured nothing. Record again, closer '
+                    'to the speakers, and watch the timer advance.'
+                : 'The audio file is missing from storage. Record again.',
+            audioPath: null,
+          );
+          return;
+        }
+      }
+
       // 1. Transcription (handles automatic chunking if > 24 MB)
       String? langHint;
       if (_selectedLanguage == 'en') langHint = 'en';
@@ -916,11 +940,22 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       }
 
       if (transcript.trim().isEmpty) {
+        final audioLen = (audioPath != null && audioPath.isNotEmpty && await File(audioPath).exists())
+            ? await File(audioPath).length()
+            : 0;
         setState(() {
           _processingStage = ProcessingStage.idle;
           _statusMessage = 'No speech detected in this recording.';
         });
-        _showNoSpeechDialog();
+        _showNoSpeechDialog(
+          detail: audioLen > 0
+              ? 'Your recording (${(audioLen / 1048576).toStringAsFixed(1)} MB on disk) '
+                  'contains no recognizable speech. Press play below to hear what '
+                  'was actually captured, then re-record with the mic uncovered '
+                  'and closer to the speakers — or try the Base/Small model under Engine.'
+              : null,
+          audioPath: (audioPath != null && audioPath.isNotEmpty) ? audioPath : null,
+        );
         return;
       }
 
@@ -1384,10 +1419,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         str.contains('errno = 111');
   }
 
-  /// Shown when on-device transcription returns no text: usually a silent
-  /// recording, a blocked microphone, or audio the current model size
-  /// cannot resolve. Offers concrete next steps instead of a dead end.
-  Future<void> _showNoSpeechDialog() async {
+  /// Shown when on-device transcription returns no text. Distinguishes an
+  /// empty/broken recording (mic problem) from unrecognized audio (model or
+  /// conditions), and lets the user hear the actual file before retrying.
+  Future<void> _showNoSpeechDialog({String? detail, String? audioPath}) async {
     if (!mounted) return;
     await showDialog(
       context: context,
@@ -1399,14 +1434,22 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             Expanded(child: Text('No speech detected', style: TextStyle(fontSize: 17))),
           ],
         ),
-        content: const SingleChildScrollView(
-          child: Text(
-            'The speech model heard no recognizable speech in this recording. '
-            'Common causes: a silent or very quiet room, the microphone was covered, '
-            'or the Tiny model is too small for this audio.\n\n'
-            'Try: record closer to the speakers, check the microphone, use a '
-            'longer sample — or switch to the Base/Small model under Engine.',
-            style: TextStyle(fontSize: 13, height: 1.45),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (detail != null) ...[
+                Text(detail, style: const TextStyle(fontSize: 13, height: 1.45)),
+                const SizedBox(height: 10),
+              ],
+              const Text(
+                'Common causes: a silent or very quiet room, the microphone was '
+                'covered, the recording is only a few seconds long — or the Tiny '
+                'model is too small for this audio.',
+                style: TextStyle(fontSize: 13, height: 1.45),
+              ),
+            ],
           ),
         ),
         actions: [
@@ -1414,9 +1457,23 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Dismiss'),
           ),
+          if (audioPath != null)
+            TextButton.icon(
+              icon: const Icon(Icons.play_arrow, size: 16),
+              label: const Text('Play recording'),
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  await _audioPlayer.play(DeviceFileSource(audioPath));
+                  _showSnackBar('Playing back your recording — listen for actual sound.');
+                } catch (e) {
+                  _showSnackBar('Playback failed: $e');
+                }
+              },
+            ),
           FilledButton.tonalIcon(
             icon: const Icon(Icons.settings_outlined, size: 16),
-            label: const Text('Engine settings'),
+            label: const Text('Engine'),
             onPressed: () async {
               Navigator.pop(ctx);
               await Navigator.push(

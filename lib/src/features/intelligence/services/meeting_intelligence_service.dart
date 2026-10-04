@@ -191,7 +191,15 @@ class MeetingIntelligenceService {
       withSegments: false,
       onProgress: onProgress,
     );
-    return result?.transcription.text.trim() ?? '';
+    // A null result means the engine itself failed (vs. silence, which
+    // yields empty text). Surface it as an engine error, not "no speech".
+    if (result == null) {
+      throw Exception(
+        'The on-device speech engine returned no result for $filePath. '
+        'Retry once; if it persists, try a different model size under Engine.',
+      );
+    }
+    return result.transcription.text.trim();
   }
 
   /// Process full scientific intelligence pipeline:
