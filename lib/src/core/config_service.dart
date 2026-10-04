@@ -1,6 +1,12 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../features/intelligence/services/meeting_intelligence_service.dart';
 
+/// Minimal app configuration.
+///
+/// Install-and-use design: transcription runs on-device (Whisper) and
+/// synthesis uses a keyless hosted open model. The only persisted choice
+/// is the Whisper model size. There are no endpoints, keys, or URLs to
+/// configure.
 class ConfigService {
   static final ConfigService _instance = ConfigService._internal();
   factory ConfigService() => _instance;
@@ -8,65 +14,23 @@ class ConfigService {
 
   late SharedPreferences _prefs;
 
-  String openAiBaseUrl = 'https://text.pollinations.ai/openai';
-  String openAiApiKey = 'zero-setup';
-  String llmModel = 'openai-fast';
-  String transcriptionBaseUrl = 'demo';
-  String transcriptionApiKey = 'demo';
-  String transcriptionModel = 'built-in-whisper';
-  String libreTranslateBaseUrl = 'http://localhost:5000';
-  bool isDemoMode = false;
+  /// 'tiny' (75 MB, fastest), 'base' (150 MB, balanced), 'small' (460 MB, accurate)
+  String whisperModel = 'base';
 
   Future<void> loadConfig() async {
     _prefs = await SharedPreferences.getInstance();
-    openAiBaseUrl = _prefs.getString('openAiBaseUrl') ?? 'https://text.pollinations.ai/openai';
-    openAiApiKey = _prefs.getString('openAiApiKey') ?? 'zero-setup';
-    llmModel = _prefs.getString('llmModel') ?? 'openai-fast';
-    transcriptionBaseUrl = _prefs.getString('transcriptionBaseUrl') ?? 'demo';
-    transcriptionApiKey = _prefs.getString('transcriptionApiKey') ?? 'demo';
-    transcriptionModel = _prefs.getString('transcriptionModel') ?? 'built-in-whisper';
-    libreTranslateBaseUrl = _prefs.getString('libreTranslateBaseUrl') ?? 'http://localhost:5000';
-    isDemoMode = _prefs.getBool('isDemoMode') ?? false;
+    whisperModel = _prefs.getString('whisperModel') ?? 'base';
+    if (!['tiny', 'base', 'small'].contains(whisperModel)) {
+      whisperModel = 'base';
+    }
   }
 
-  Future<void> saveConfig({
-    required String openAiBaseUrl,
-    required String openAiApiKey,
-    required String llmModel,
-    String? transcriptionBaseUrl,
-    String? transcriptionApiKey,
-    required String transcriptionModel,
-    required String libreTranslateBaseUrl,
-    bool isDemoMode = false,
-  }) async {
-    this.openAiBaseUrl = openAiBaseUrl;
-    this.openAiApiKey = openAiApiKey;
-    this.llmModel = llmModel;
-    this.transcriptionBaseUrl = transcriptionBaseUrl ?? openAiBaseUrl;
-    this.transcriptionApiKey = transcriptionApiKey ?? openAiApiKey;
-    this.transcriptionModel = transcriptionModel;
-    this.libreTranslateBaseUrl = libreTranslateBaseUrl;
-    this.isDemoMode = isDemoMode;
-
-    await _prefs.setString('openAiBaseUrl', this.openAiBaseUrl);
-    await _prefs.setString('openAiApiKey', this.openAiApiKey);
-    await _prefs.setString('llmModel', this.llmModel);
-    await _prefs.setString('transcriptionBaseUrl', this.transcriptionBaseUrl);
-    await _prefs.setString('transcriptionApiKey', this.transcriptionApiKey);
-    await _prefs.setString('transcriptionModel', this.transcriptionModel);
-    await _prefs.setString('libreTranslateBaseUrl', this.libreTranslateBaseUrl);
-    await _prefs.setBool('isDemoMode', this.isDemoMode);
+  Future<void> setWhisperModel(String model) async {
+    whisperModel = model;
+    await _prefs.setString('whisperModel', whisperModel);
   }
 
   AiConfig getAiConfig() {
-    return AiConfig(
-      openAiApiKey: openAiApiKey,
-      openAiBaseUrl: openAiBaseUrl,
-      transcriptionBaseUrl: transcriptionBaseUrl,
-      transcriptionApiKey: transcriptionApiKey,
-      transcriptionModel: transcriptionModel,
-      llmModel: llmModel,
-      isDemoMode: isDemoMode || openAiBaseUrl == 'demo',
-    );
+    return AiConfig(whisperModel: whisperModel);
   }
 }

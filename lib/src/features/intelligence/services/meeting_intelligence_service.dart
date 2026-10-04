@@ -2,31 +2,21 @@ import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:whisper_ggml/whisper_ggml.dart';
 import '../../../models/meeting_session.dart';
 import '../../public_apis/services/public_api_service.dart';
 import '../../audio/services/audio_chunker_service.dart';
 import '../../clinical/services/phi_scrubber_service.dart';
 
-/// Configuration for AI Providers (Whisper STT & LLM Inference)
+/// Minimal engine configuration.
+///
+/// Transcription always runs on-device (Whisper model choice only).
+/// Synthesis uses a keyless hosted open model; there are no endpoints,
+/// keys, or URLs to configure.
 class AiConfig {
-  final String openAiApiKey;
-  final String openAiBaseUrl;
-  final String transcriptionBaseUrl;
-  final String transcriptionApiKey;
-  final String transcriptionModel;
-  final String llmModel;
-  final bool isDemoMode;
+  final String whisperModel; // 'tiny' | 'base' | 'small'
 
-  AiConfig({
-    this.openAiApiKey = '',
-    this.openAiBaseUrl = 'https://api.openai.com/v1',
-    String? transcriptionBaseUrl,
-    String? transcriptionApiKey,
-    this.transcriptionModel = 'whisper-1',
-    this.llmModel = 'qwen2.5:3b',
-    this.isDemoMode = false,
-  })  : transcriptionBaseUrl = transcriptionBaseUrl ?? openAiBaseUrl,
-        transcriptionApiKey = transcriptionApiKey ?? openAiApiKey;
+  AiConfig({this.whisperModel = 'base'});
 }
 
 /// Service handling Speech-to-Text transcription, audio segmentation,
@@ -64,158 +54,144 @@ class MeetingIntelligenceService {
 
   AiConfig get config => _config;
 
-  /// Check whether speech-to-text is in built-in simulation mode
-  bool get isTranscriptionDemoMode =>
-      _config.isDemoMode ||
-      _config.transcriptionBaseUrl == 'demo' ||
-      (_config.transcriptionApiKey.isEmpty && _config.transcriptionBaseUrl.contains('openai.com'));
-
-  /// Check whether LLM intelligence uses the built-in demo response
-  bool get isLlmDemoMode =>
-      _config.isDemoMode ||
-      _config.openAiBaseUrl == 'demo' ||
-      (_config.openAiApiKey.isEmpty && _config.openAiBaseUrl.contains('openai.com'));
-
-  /// True when the app uses built-in demo responses instead of configured endpoints
-  bool get isDemoMode =>
-      isTranscriptionDemoMode ||
-      isLlmDemoMode ||
-      _config.openAiBaseUrl.contains('pollinations.ai');
+  /// Keyless hosted open model used for synthesis, Q&A, and translation.
+  /// Verified reachable with zero configuration; no account needed.
+  static const String llmBaseUrl = 'https://text.pollinations.ai/openai';
+  static const String llmModel = 'openai-fast';
 
   /// Optional pattern-based redaction helper
   ({String scrubbedText, int redactedCount, Map<String, int> breakdown}) deidentifyText(String rawText) {
     return _phiScrubber.scrubTranscript(rawText);
   }
 
-  /// Transcribe audio file with biomedical prompt conditioning and
-  /// automated multi-part segmentation if the file exceeds the 24 MB ceiling.
+  /// On-device transcription with biomedical vocabulary biasing.
   ///
-  /// Honesty rule: sample data is returned ONLY when [allowDemoSample] is
-  /// true (explicit user opt-in). Endpoint failures are rethrown so the UI
-  /// can explain them instead of showing unrelated text.
+  /// The Whisper model downloads once on first use and stays cached, so
+  /// later transcriptions work fully offline. Long recordings are split
+  /// into sequential parts and joined with rolling context. Failures
+  /// throw with an actionable message — text is never substituted.
   Future<String> transcribeAudio({
     required String audioFilePath,
     String? languageHint, // 'en', 'hi', or null for auto-detect
     void Function(String progressUpdate)? onProgress,
-    bool allowDemoSample = false,
   }) async {
     final file = File(audioFilePath);
     if (!await file.exists()) {
       throw Exception('Audio file not found at: $audioFilePath');
     }
 
-    // No transcription endpoint configured.
-    if (isTranscriptionDemoMode) {
-      if (allowDemoSample) {
-        onProgress?.call('Loading built-in sample transcript...');
-        await Future.delayed(const Duration(milliseconds: 1200));
-        return _generateMockScientificTranscript();
+    final ext = audioFilePath.split('.').last.toLowerCase();
+    if (ext != 'wav' && (Platform.isWindows || Platform.isLinux)) {
+      final hasFfmpeg = await _audioChunker.ffmpegAvailable();
+      if (!hasFfmpeg) {
+        throw Exception(
+          'This .$ext file needs conversion, but FFmpeg was not found. '
+          'Install FFmpeg (for example: sudo apt install ffmpeg) and retry, '
+          'or import a WAV file. New recordings are saved as WAV automatically.',
+        );
       }
-      throw StateError(
-        'No transcription endpoint is configured. '
-        'Add a transcription URL and model in Settings, or reload with sample data.',
-      );
     }
 
     final String scientificContextPrompt;
     if (languageHint == 'hi' || languageHint == 'hinglish') {
-      scientificContextPrompt = 
-          'वैज्ञानिक शोध संगोष्ठी, ऑन्कोलॉजी लैब मीटिंग, जैव चिकित्सा अनुसंधान और क्लीनिकल सेमिनार. '
+      scientificContextPrompt =
           'Scientific research seminar, oncology tumor board, and biomedical lab meeting in Hindi, English, and Hinglish. '
-          'Terms: जीन (KRAS G12C, TP53, BRCA1/2, EGFR, HER2, BRAF V600E, PD-L1), '
-          'औषधियां (cisplatin, osimertinib, doxorubicin, paclitaxel, pembrolizumab, sotorasib), '
-          'प्रयोग और परख (Western blot, flow cytometry, qPCR, RNA-Seq, ChIP-seq, immunohistochemistry, CRISPR-Cas9), '
-          'सांख्यिकी (p-value, hazard ratio, Kaplan-Meier, 95% CI, IC50, viability). '
-          'Transcribe scientific and code-mixed Hindi-English terminology accurately with proper casing and Devanagari/English script.';
+          'Terms: KRAS G12C, TP53, BRCA1/2, EGFR, HER2, BRAF V600E, PD-L1, '
+          'cisplatin, osimertinib, doxorubicin, paclitaxel, pembrolizumab, sotorasib, '
+          'Western blot, flow cytometry, qPCR, RNA-Seq, ChIP-seq, immunohistochemistry, CRISPR-Cas9, '
+          'p-value, hazard ratio, Kaplan-Meier, 95% CI, IC50, viability. '
+          'Transcribe scientific and code-mixed Hindi-English terminology accurately.';
     } else {
-      scientificContextPrompt = 
+      scientificContextPrompt =
           'Scientific research seminar, oncology tumor board, and biomedical lab meeting. '
           'Terms: gene symbols (KRAS G12C, TP53, BRCA1/2, EGFR, HER2, BRAF V600E, PD-L1), '
           'oncology drugs (cisplatin, osimertinib, doxorubicin, paclitaxel, pembrolizumab, sotorasib), '
           'experimental assays (Western blot, flow cytometry, qPCR, RNA-Seq, ChIP-seq, immunohistochemistry, CRISPR-Cas9), '
           'and statistics (p-value, hazard ratio, Kaplan-Meier, 95% CI). '
-          'Transcribe scientific and code-mixed terminology accurately with standard scientific casing.';
+          'Transcribe scientific terminology accurately with standard scientific casing.';
     }
 
-    try {
-      // Check if audio file exceeds the 24 MB API limit
-      if (_audioChunker.needsChunking(audioFilePath)) {
-        onProgress?.call('Audio exceeds 24 MB limit. Segmenting into sequential chunks...');
-        final chunkPaths = await _audioChunker.splitAudioFile(audioFilePath);
-        final List<String> transcriptParts = [];
-        String rollingPrompt = scientificContextPrompt;
+    final model = _whisperModel();
+    final lang = _whisperLang(languageHint);
+    final controller = WhisperController();
 
+    onProgress?.call('Preparing on-device speech model (downloads once on first run)...');
+    try {
+      if (_audioChunker.needsChunking(audioFilePath)) {
+        onProgress?.call('Long recording — transcribing in sequential parts...');
+        final chunkPaths = await _audioChunker.splitAudioFile(audioFilePath);
+        final List<String> parts = [];
+        String rollingPrompt = scientificContextPrompt;
         try {
           for (int i = 0; i < chunkPaths.length; i++) {
-            final chunkPath = chunkPaths[i];
-            onProgress?.call('Transcribing chunk ${i + 1} of ${chunkPaths.length}...');
-            
-            final chunkTranscript = await _transcribeSingleFile(
-              filePath: chunkPath,
+            final part = await _transcribeChunk(
+              controller: controller,
+              model: model,
+              filePath: chunkPaths[i],
+              lang: lang,
               prompt: rollingPrompt,
-              languageHint: languageHint,
+              onProgress: (percent) => onProgress?.call('Transcribing part ${i + 1} of ${chunkPaths.length} — $percent%...'),
             );
-            transcriptParts.add(chunkTranscript);
-
-            // Update rolling context for continuous syntactic flow
+            if (part.isNotEmpty) parts.add(part);
             rollingPrompt = _audioChunker.buildRollingPrompt(
               basePrompt: scientificContextPrompt,
-              previousChunkTranscript: chunkTranscript,
+              previousChunkTranscript: part,
             );
           }
         } finally {
           await _audioChunker.cleanupChunks(chunkPaths, audioFilePath);
         }
-
-        return transcriptParts.join(' ');
-      } else {
-        // Single chunk execution
-        return await _transcribeSingleFile(
-          filePath: audioFilePath,
-          prompt: scientificContextPrompt,
-          languageHint: languageHint,
-        );
+        return parts.join(' ');
       }
+      return await _transcribeChunk(
+        controller: controller,
+        model: model,
+        filePath: audioFilePath,
+        lang: lang,
+        prompt: scientificContextPrompt,
+        onProgress: (percent) => onProgress?.call('Transcribing on-device — $percent%...'),
+      );
     } catch (e) {
-      // Never substitute sample data for a failed endpoint. Surface the
-      // failure so the UI can offer retry, settings, or explicit sample use.
-      throw Exception('Transcription request failed: $e');
+      throw Exception('On-device transcription failed: $e');
     }
   }
 
-  /// Internal worker for a single audio file chunk
-  Future<String> _transcribeSingleFile({
-    required String filePath,
-    required String prompt,
-    String? languageHint,
-  }) async {
-    final file = File(filePath);
-    final fileName = file.path.split(Platform.pathSeparator).last;
-
-    final formData = FormData.fromMap({
-      'file': await MultipartFile.fromFile(file.path, filename: fileName),
-      'model': _config.transcriptionModel,
-      'response_format': 'json',
-      'prompt': prompt,
-      if (languageHint != null && languageHint.isNotEmpty) 'language': languageHint,
-    });
-
-    final response = await _dio.post(
-      '${_config.transcriptionBaseUrl}/audio/transcriptions',
-      data: formData,
-      options: Options(
-        headers: {
-          if (_config.transcriptionApiKey.isNotEmpty)
-            'Authorization': 'Bearer ${_config.transcriptionApiKey}',
-        },
-      ),
-    );
-
-    if (response.statusCode == 200 && response.data != null) {
-      return response.data['text'] ?? '';
-    } else {
-      throw Exception('Transcription failed with code: ${response.statusCode}');
+  WhisperModel _whisperModel() {
+    switch (_config.whisperModel) {
+      case 'tiny':
+        return WhisperModel.tiny;
+      case 'small':
+        return WhisperModel.small;
+      case 'base':
+      default:
+        return WhisperModel.base;
     }
+  }
+
+  String _whisperLang(String? hint) {
+    if (hint == 'en') return 'en';
+    if (hint == 'hi') return 'hi';
+    return 'auto';
+  }
+
+  /// Single on-device inference pass over one audio file.
+  Future<String> _transcribeChunk({
+    required WhisperController controller,
+    required WhisperModel model,
+    required String filePath,
+    required String lang,
+    required String prompt,
+    required void Function(int percent) onProgress,
+  }) async {
+    final result = await controller.transcribe(
+      model: model,
+      audioPath: filePath,
+      lang: lang,
+      initialPrompt: prompt,
+      withSegments: false,
+      onProgress: onProgress,
+    );
+    return result?.transcription.text.trim() ?? '';
   }
 
   /// Process full scientific intelligence pipeline:
@@ -231,20 +207,9 @@ class MeetingIntelligenceService {
   })> processSessionIntelligence({
     required String transcript,
     required String sessionTitle,
-    bool allowDemoSample = false,
   }) async {
     if (transcript.trim().isEmpty) {
       throw Exception('Transcript is empty. Cannot generate intelligence.');
-    }
-
-    if (isLlmDemoMode) {
-      if (allowDemoSample) {
-        return _generateMockScientificIntelligence(transcript);
-      }
-      throw StateError(
-        'No language-model endpoint is configured. '
-        'Add an LLM URL and model in Settings, or reload with sample data.',
-      );
     }
 
     try {
@@ -335,11 +300,10 @@ $effectiveContext
 """
 ''';
 
-    final cleanBaseUrl = _config.openAiBaseUrl.replaceAll(RegExp(r'/+$'), '');
     final response = await _dio.post(
-      '$cleanBaseUrl/chat/completions',
+      '$llmBaseUrl/chat/completions',
       data: {
-        'model': _config.llmModel,
+        'model': llmModel,
         'temperature': 0.15,
         'response_format': {'type': 'json_object'},
         'messages': [
@@ -349,8 +313,6 @@ $effectiveContext
       },
       options: Options(
         headers: {
-          if (_config.openAiApiKey.isNotEmpty)
-            'Authorization': 'Bearer ${_config.openAiApiKey}',
           'Content-Type': 'application/json',
         },
       ),
@@ -392,56 +354,11 @@ $effectiveContext
       speakerTurns: speakerTurns,
     );
     } catch (e) {
-      // Never substitute sample synthesis for a failed endpoint.
       throw Exception('Analysis request failed: $e');
     }
   }
 
-  /// Lightweight reachability probe for the "endpoint status" indicator.
-  /// Returns false when unconfigured or unreachable. This is an
-  /// approximation (a `GET /models` check), not a transcription trial.
-  Future<bool> checkTranscriptionHealth() async {
-    try {
-      if (isTranscriptionDemoMode) return false;
-      final base = _config.transcriptionBaseUrl.replaceAll(RegExp(r'/+$'), '');
-      final response = await _dio.get(
-        '$base/models',
-        options: Options(
-          headers: {
-            if (_config.transcriptionApiKey.isNotEmpty)
-              'Authorization': 'Bearer ${_config.transcriptionApiKey}',
-          },
-          receiveTimeout: const Duration(seconds: 8),
-        ),
-      );
-      return response.statusCode == 200;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// Lightweight reachability probe for the "endpoint status" indicator.
-  Future<bool> checkLlmHealth() async {
-    try {
-      if (isLlmDemoMode) return false;
-      final base = _config.openAiBaseUrl.replaceAll(RegExp(r'/+$'), '');
-      final response = await _dio.get(
-        '$base/models',
-        options: Options(
-          headers: {
-            if (_config.openAiApiKey.isNotEmpty)
-              'Authorization': 'Bearer ${_config.openAiApiKey}',
-          },
-          receiveTimeout: const Duration(seconds: 8),
-        ),
-      );
-      return response.statusCode == 200;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// Clean Markdown code fences and extract valid JSON object from LLM response
+  /// Clean Markdown code fences and extract valid JSON object from LLM response  /// Clean Markdown code fences and extract valid JSON object from LLM response
   Map<String, dynamic> _cleanAndParseJson(String rawText) {
     String cleaned = rawText.trim();
     if (cleaned.startsWith('```')) {
@@ -468,10 +385,6 @@ $effectiveContext
     required List<ChatMessage> history,
     required String question,
   }) async {
-    if (isLlmDemoMode) {
-      return _generateLocalScientificAnswer(transcript, question);
-    }
-
     try {
       final messages = <Map<String, String>>[
         {
@@ -497,18 +410,15 @@ $transcript
         {'role': 'user', 'content': question},
       ];
 
-      final cleanBaseUrl = _config.openAiBaseUrl.replaceAll(RegExp(r'/+$'), '');
       final response = await _dio.post(
-        '$cleanBaseUrl/chat/completions',
+        '$llmBaseUrl/chat/completions',
         data: {
-          'model': _config.llmModel,
+          'model': llmModel,
           'temperature': 0.2,
           'messages': messages,
         },
         options: Options(
           headers: {
-            if (_config.openAiApiKey.isNotEmpty)
-              'Authorization': 'Bearer ${_config.openAiApiKey}',
             'Content-Type': 'application/json',
           },
         ),
@@ -530,24 +440,11 @@ $transcript
   }) async {
     if (text.trim().isEmpty) return '';
 
-    if (isLlmDemoMode) {
-      if (targetLanguage.toLowerCase().contains('hi')) {
-        return 'हिन्दी अनुवाद (वैज्ञानिक सारांश):\n\n'
-            'डॉ. चेन: आज की ट्रांसलेशनल ऑन्कोलॉजी शोध बैठक में आप सभी का स्वागत है। '
-            'आज हम नॉन-स्मॉल सेल लंग कैंसर (NSCLC) में KRAS G12C इनहिबिटर प्रतिरोध तंत्र पर हमारे अध्ययनों की समीक्षा कर रहे हैं। '
-            'प्रिया और मार्कस ने H23 सेल लाइन पर सोटोरासिब (Sotorasib) और ओसिमर्टिनिब (Osimertinib) के संयोजन के साथ नए इन विट्रो डेटा पूरे किए हैं। '
-            'फॉस्फो-ERK और फॉस्फो-AKT सिग्नलिंग में महत्वपूर्ण गिरावट देखी गई (p < 0.001)।';
-      } else {
-        return text;
-      }
-    }
-
     try {
-      final cleanBaseUrl = _config.openAiBaseUrl.replaceAll(RegExp(r'/+$'), '');
       final response = await _dio.post(
-        '$cleanBaseUrl/chat/completions',
+        '$llmBaseUrl/chat/completions',
         data: {
-          'model': _config.llmModel,
+          'model': llmModel,
           'temperature': 0.1,
           'messages': [
             {
@@ -564,8 +461,6 @@ $transcript
         },
         options: Options(
           headers: {
-            if (_config.openAiApiKey.isNotEmpty)
-              'Authorization': 'Bearer ${_config.openAiApiKey}',
             'Content-Type': 'application/json',
           },
         ),
@@ -632,9 +527,9 @@ Keep the summary under 350 words while retaining all specific gene names, drug d
 
     try {
       final response = await _dio.post(
-        '${_config.openAiBaseUrl}/chat/completions',
+        '$llmBaseUrl/chat/completions',
         data: {
-          'model': _config.llmModel,
+          'model': llmModel,
           'temperature': 0.15,
           'messages': [
             {'role': 'system', 'content': prompt},
@@ -642,10 +537,7 @@ Keep the summary under 350 words while retaining all specific gene names, drug d
           ],
         },
         options: Options(
-          headers: {
-            'Authorization': 'Bearer ${_config.openAiApiKey}',
-            'Content-Type': 'application/json',
-          },
+          headers: {'Content-Type': 'application/json'},
         ),
       );
 
@@ -727,158 +619,6 @@ Keep the summary under 350 words while retaining all specific gene names, drug d
     return turns;
   }
 
-  // --- Scientific Mock Fallbacks for Instant Offline Validation ---
-
-  String _generateMockScientificTranscript() {
-    return 'Dr. Rao (Lead PI): Good afternoon lab team. Today we are reviewing data from our non-small cell lung cancer (NSCLC) cohort '
-        'harboring the KRAS G12C mutation. As you recall, monotherapy with Sotorasib initially shows partial response, '
-        'but acquired resistance frequently emerges within six to eight months.\n\n'
-        'Dr. Marcus (Remote Zoom Collaborator): Our hypothesis is that secondary EGFR amplification and MET bypass activation mediate this resistance. '
-        'In our in vitro cell viability assays with the H23 cell line, combining Sotorasib at 100 nanomolar with Osimertinib '
-        'synergistically suppressed phospho-ERK and phospho-AKT levels with statistical significance (p < 0.001).\n\n'
-        'Dr. Rao (Lead PI): Dr. Chen, please run the Western Blot validation on cell lysates by Thursday before our next passaging. '
-        'Priya, aap patient-derived xenograft (PDX) samples ka RNA-Seq library preparation finalize kar lijiye by Friday.\n\n'
-        'Elena (Postdoc - Bench Lead): Understood Dr. Rao. Also, we need to order fresh stocks of Cisplatin, Doxorubicin, and anti-PD-L1 antibodies for the apoptosis flow cytometry assay. '
-        'I will submit the order requisition to procurement today.\n\n'
-        'Dr. Marcus (Remote Zoom Collaborator): Agreed. Let us compile the combination index curves and submit the translational abstract to AACR by next week. Thank you all.';
-  }
-
-  Future<({
-    SummaryResult summary,
-    List<ActionItem> actionItems,
-    List<GlossaryTerm> glossary,
-    List<PubMedCitation> citations,
-    List<SpeakerTurn> speakerTurns,
-  })> _generateMockScientificIntelligence(String transcript) async {
-    await Future.delayed(const Duration(milliseconds: 1000));
-
-    final summary = SummaryResult(
-      executiveSummary:
-          'The research meeting reviewed mechanisms of acquired resistance in KRAS G12C-mutant non-small cell lung cancer (NSCLC). '
-          'Preliminary in vitro data on H23 cell lines demonstrates that dual inhibition using Sotorasib combined with Osimertinib '
-          'effectively abrogates secondary EGFR/MET bypass signaling, significantly downregulating phosphorylated ERK and AKT pathways (p < 0.001). '
-          'Next steps involve in vivo PDX RNA-Seq transcriptomic validation and apoptosis flow cytometry quantification.',
-      keyPoints: [
-        'Sotorasib monotherapy exhibits acquired resistance mediated by EGFR/MET bypass activation.',
-        'Dual inhibition (Sotorasib 100 nM + Osimertinib) synergistic efficacy confirmed in vitro (p < 0.001).',
-        'Marked downregulation of downstream phosphorylated ERK and AKT signaling observed.',
-        'Patient-derived xenograft (PDX) transcriptomic profiling scheduled to corroborate in vitro findings.',
-      ],
-      decisionsMade: [
-        'Proceed with combination regimen testing in patient-derived xenograft (PDX) models.',
-        'Authorize purchase of fresh Cisplatin, Doxorubicin, and anti-PD-L1 antibody batches.',
-        'Prepare translational abstract submission for upcoming AACR annual conference.',
-      ],
-      scientificHypothesis:
-          'Secondary EGFR amplification and MET bypass signaling drive acquired resistance to KRAS G12C inhibition, which can be overcome via dual pathway blockade.',
-      detectedLanguage: 'English / Scientific Multilingual',
-    );
-
-    final speakerTurns = [
-      SpeakerTurn(
-        id: 'turn-1',
-        speakerId: 'Speaker 1',
-        speakerName: 'Dr. Rao (Lead PI)',
-        startSeconds: 0,
-        endSeconds: 42,
-        text: 'Good afternoon lab team. Today we are reviewing data from our non-small cell lung cancer (NSCLC) cohort harboring the KRAS G12C mutation. As you recall, monotherapy with Sotorasib initially shows partial response, but acquired resistance frequently emerges within six to eight months.',
-      ),
-      SpeakerTurn(
-        id: 'turn-2',
-        speakerId: 'Speaker 2',
-        speakerName: 'Dr. Marcus (Remote Zoom Collaborator)',
-        startSeconds: 43,
-        endSeconds: 88,
-        text: 'Our hypothesis is that secondary EGFR amplification and MET bypass activation mediate this resistance. In our in vitro cell viability assays with the H23 cell line, combining Sotorasib at 100 nanomolar with Osimertinib synergistically suppressed phospho-ERK and phospho-AKT levels (p < 0.001).',
-      ),
-      SpeakerTurn(
-        id: 'turn-3',
-        speakerId: 'Speaker 1',
-        speakerName: 'Dr. Rao (Lead PI)',
-        startSeconds: 89,
-        endSeconds: 115,
-        text: 'Dr. Chen, please run the Western Blot validation on cell lysates by Thursday before our next passaging. Priya, aap patient-derived xenograft (PDX) samples ka RNA-Seq library preparation finalize kar lijiye by Friday.',
-      ),
-      SpeakerTurn(
-        id: 'turn-4',
-        speakerId: 'Speaker 3',
-        speakerName: 'Elena (Postdoc - Bench Lead)',
-        startSeconds: 116,
-        endSeconds: 145,
-        text: 'Understood Dr. Rao. Also, we need to order fresh stocks of Cisplatin, Doxorubicin, and anti-PD-L1 antibodies for the apoptosis flow cytometry assay. I will submit the order requisition to procurement today.',
-      ),
-      SpeakerTurn(
-        id: 'turn-5',
-        speakerId: 'Speaker 2',
-        speakerName: 'Dr. Marcus (Remote Zoom Collaborator)',
-        startSeconds: 146,
-        endSeconds: 172,
-        text: 'Agreed. Let us compile the combination index curves and submit the translational abstract to AACR by next week. Thank you all.',
-      ),
-    ];
-
-    final actionItems = [
-      ActionItem(
-        id: '1',
-        task: 'Execute Western Blot validation for phospho-ERK and phospho-AKT on H23 cell lysates',
-        assignee: 'Dr. Chen',
-        deadline: 'Thursday',
-        priority: 'High',
-        category: 'Bench Assay',
-        speaker: 'Dr. Rao (Lead PI)',
-      ),
-      ActionItem(
-        id: '2',
-        task: 'Finalize RNA-Seq library prep on PDX tumor tissue cohorts',
-        assignee: 'Priya',
-        deadline: 'Friday',
-        priority: 'High',
-        category: 'Data Analysis',
-        speaker: 'Dr. Rao (Lead PI)',
-      ),
-      ActionItem(
-        id: '3',
-        task: 'Procure Cisplatin, Doxorubicin, and anti-PD-L1 reagents for apoptosis assay',
-        assignee: 'Lab Tech',
-        deadline: 'Monday',
-        priority: 'Medium',
-        category: 'Reagents',
-        speaker: 'Elena (Postdoc - Bench Lead)',
-      ),
-      ActionItem(
-        id: '4',
-        task: 'Draft translational oncology abstract for AACR conference submission',
-        assignee: 'Research Team',
-        deadline: 'Next week',
-        priority: 'High',
-        category: 'Manuscript',
-        speaker: 'Dr. Marcus (Remote Zoom Collaborator)',
-      ),
-    ];
-
-    // Query PubChem and Free Dictionary cascade for scientific terms
-    final sampleScientificTerms = ['cisplatin', 'doxorubicin', 'apoptosis', 'angiogenesis'];
-    final glossary = await _publicApiService.lookupBatchWords(sampleScientificTerms);
-
-    final sampleCitations = [
-      PubMedCitation(
-        pmid: '33208354',
-        title: 'Mechanisms of Acquired Resistance to KRAS G12C Inhibitors in Non-Small Cell Lung Cancer',
-        authors: 'Awad MM, Liu S, Rybkin II, et al.',
-        journal: 'N Engl J Med',
-        pubYear: '2021',
-        doi: '10.1056/NEJMoa2105281',
-      ),
-    ];
-
-    return (
-      summary: summary,
-      actionItems: actionItems,
-      glossary: glossary,
-      citations: sampleCitations,
-      speakerTurns: speakerTurns,
-    );
-  }
 }
 
 extension StringExtension on String {

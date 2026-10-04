@@ -5,72 +5,48 @@ rules that keep the app honest about where every word came from.
 
 ## 1. Transcript sources (in priority order)
 
-1. **Live on-device transcription** (`Record → Live` mode). The OS
-   recognizer transcribes as you speak; there is no file and no upload,
-   so the transcript matches the meeting by construction. No keys needed.
-   Unavailable on Linux (unsupported by the plugin), where Live mode is
-   hidden instead of broken.
-2. **Configured transcription endpoint** (`Settings → Transcription`)
-   for recorded audio files. Examples: Groq `whisper-large-v3`, OpenAI
-   `whisper-1`, or a local Faster-Whisper server. Files above ~24 MB are
-   chunked with a biomedical vocabulary prompt and rolling context.
-3. **Built-in sample** — only when the user explicitly chooses
-   “Use sample” / “View sample”. The UI then shows a `DemoBanner`
-   (“Sample data — a built-in example, not your recording”) on the
-   Overview and Transcript tabs until new real input arrives.
-
-There is no third source. In particular, endpoint failures are **never**
-silently replaced with sample text.
+1. **On-device Whisper** (`whisper_ggml`, all release platforms).
+   Recordings are saved as 16 kHz mono WAV, transcribed locally with a
+   biomedical vocabulary bias. The model downloads once on first use and
+   stays cached; later runs are fully offline. Long recordings split into
+   sequential parts with rolling context. Non-WAV imports convert via the
+   bundled FFmpeg on Android/macOS; on Windows/Linux they need FFmpeg on
+   PATH (clear error otherwise).
+2. **Pasted or imported text** is analyzed directly (no audio step).
+3. There is no sample-data path. Failures throw with actionable messages;
+   silent audio yields an empty transcript, and synthesis refuses empty
+   input instead of inventing content.
 
 ## 2. Honesty rules (enforced in code)
 
-- `transcribeAudio(allowDemoSample: false)` (the default) throws
-  `StateError` when no endpoint is configured, and rethrows endpoint
-  failures wrapped with context. Sample text requires
-  `allowDemoSample: true`, which only the setup wizard, the error
-  dialog, and the demo banner can pass.
-- `processSessionIntelligence` follows the same rule for the LLM step.
-- `_executeAiPipeline` routes every failure to `_showPipelineErrorDialog`,
-  which offers Retry / View sample / Settings. Dismissing leaves existing
-  audio and notes untouched.
-- `_isDemoContent` marks the visible session; starting a recording,
-  importing audio, loading a session, or editing the transcript clears it.
+- `transcribeAudio` runs on-device Whisper and throws with an
+  actionable message on failure (missing file, missing FFmpeg for
+  non-WAV imports, empty result). Nothing is ever substituted.
+- `processSessionIntelligence` refuses empty transcripts instead of
+  inventing content.
+- `_executeAiPipeline` routes every failure to a retry dialog.
+  Dismissing leaves existing audio, notes, and transcripts untouched.
 
-## 3. Why no on-device transcription plugin
+## 3. On-device transcription (`whisper_ggml` 2.x)
 
-Revisited and partially adopted (v1.5.0): `speech_to_text` now powers
-**Live capture mode**, with two deliberate constraints drawn from the
-plugin's own docs:
+Adopted for all release platforms (Android, iOS, Linux, macOS, Windows).
+Only the long-stable API surface is used: `WhisperController`,
+`transcribe(model:, audioPath:, lang:, initialPrompt:, withSegments:,
+onProgress:)`, `WhisperModel.tiny/base/small` (multilingual variants;
+English-only `*En` models are avoided so Hinglish keeps working).
+`lang` maps from the app language selector (`en` → `en`, `hi` → `hi`,
+otherwise `auto`). Synthesis, Q&A, and translation use a keyless hosted
+open model (`MeetingIntelligenceService.llmBaseUrl`).
 
-- **No Linux implementation** exists, so Live mode is hidden there
-  instead of failing. Linux keeps file recording + endpoints.
-- **Recording audio and recognizing simultaneously conflict on
-  Android**, so Live mode captures captions *instead of* a file — there
-  is no playback seek for live sessions, and the UI says so.
+## 4. Model sizes (Engine settings)
 
-The plugin's short-session behavior (stops after pauses / platform time
-limits with status `done`) is handled by auto-restart in
-`RecorderView._onLiveStatus`, and only the long-stable API surface is
-used (`initialize`, `listen(onResult:, localeId:)`, `stop`,
-`isListening`, `locales`).
-
-## 4. Endpoint setup paths (what the wizard offers)
-
-| Path | Transcription | LLM | Effort |
+| Model | Download | RAM | Best for |
 | :--- | :--- | :--- | :--- |
-| Groq free key | `whisper-large-v3` | `llama-3.3-70b-versatile` | Paste key from console.groq.com (~2 min) |
-| Local server | Faster-Whisper on `:8000` | Ollama / vLLM | Run `scripts/setup_local_ai.sh` |
-| OpenAI key | `whisper-1` | `gpt-4o-mini` | Paid key |
-| Sample data | Built-in example | Built-in example | None; always labeled |
+| Tiny | ~75 MB | ~150 MB | Quick notes, older devices |
+| Base (default) | ~150 MB | ~250 MB | Balanced meetings and talks |
+| Small | ~460 MB | ~500 MB | Best accuracy, newer phones/desktops |
 
-## 5. Health checks
-
-`checkTranscriptionHealth()` / `checkLlmHealth()` probe `GET /models`
-on the configured bases. They are approximations (not transcription
-trials) used only for the red/amber/green dots in the recording deck.
-`false` means “unconfigured or unreachable”, never a diagnosis.
-
-## 6. Development notes
+## 5. Development notes
 
 - Dart `num.clamp()` returns `num`: always follow with `.toInt()` /
   `.toDouble()` when the target is typed (`flex:`, slider `value:`,
@@ -78,5 +54,5 @@ trials) used only for the red/amber/green dots in the recording deck.
   rejects implicit narrowing.
 - `speechTurns` drive the transcript view, talk-time math, and seek.
   Keep them sorted and preserve `speakerId` stability so renames cascade.
-- `SessionRepository` schema is at v5; adding a persisted demo flag
-  would require a v6 migration (`liveNotesJson`-style pattern).
+- `SessionRepository` schema is at v5; follow the `liveNotesJson`-style
+  column pattern for any future session fields.

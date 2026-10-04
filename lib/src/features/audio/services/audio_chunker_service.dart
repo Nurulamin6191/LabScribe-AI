@@ -69,9 +69,11 @@ class AudioChunkerService {
     return [sourcePath];
   }
 
+  /// Public probe used before attempting non-WAV transcription on desktop.
+  Future<bool> ffmpegAvailable() async => _hasFfmpeg();
+
   /// Check if ffmpeg binary exists in PATH
-  Future<bool> _hasFfmpeg() async {
-    try {
+  Future<bool> _hasFfmpeg() async {    try {
       final result = await Process.run('ffmpeg', ['-version']);
       return result.exitCode == 0;
     } catch (_) {

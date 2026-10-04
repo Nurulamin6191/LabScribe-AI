@@ -453,46 +453,6 @@ class TalkTimeBar extends StatelessWidget {
 }
 
 
-/// Amber strip marking results as built-in sample content.
-/// Shown whenever visible analysis came from the sample instead of the
-/// user's recording, so demo output can never be mistaken for real results.
-class DemoBanner extends StatelessWidget {
-  final VoidCallback onSetup;
-  const DemoBanner({super.key, required this.onSetup});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: theme.colorScheme.tertiary.withValues(alpha: 0.45)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.science_outlined, size: 17, color: theme.colorScheme.tertiary),
-          const SizedBox(width: 9),
-          const Expanded(
-            child: Text(
-              'Sample data — a built-in example, not your recording.',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, height: 1.35),
-            ),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: onSetup,
-            icon: const Icon(Icons.key_outlined, size: 13),
-            label: const Text('Set up', style: TextStyle(fontSize: 12)),
-            style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Animated level-meter bars shown while recording, in the style of
 /// professional recorder apps. Pure presentation — no audio analysis.
 class RecordingBars extends StatefulWidget {

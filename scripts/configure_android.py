@@ -74,8 +74,8 @@ def configure_app_gradle():
         with open(groovy_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        content = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 23', content)
-        content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', content)
+        content = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 24', content)
+        content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 24', content)
         content = re.sub(r'compileSdkVersion\s+flutter\.compileSdkVersion', 'compileSdkVersion 35', content)
         content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 35', content)
         content = re.sub(r'compileSdkVersion\s+\d+', 'compileSdkVersion 35', content)
@@ -101,7 +101,7 @@ def configure_app_gradle():
         with open(kts_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', content)
+        content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 24', content)
         content = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 35', content)
         content = re.sub(r'compileSdk\s*=\s*\d+', 'compileSdk = 35', content)
 

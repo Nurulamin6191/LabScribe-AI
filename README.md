@@ -111,48 +111,29 @@ flowchart TD
 
 ## Getting real results with zero setup
 
-No API keys, no terminal, no URLs needed for the default path:
+No API keys, no terminal, no URLs, no accounts. Install and use:
 
-1. **Live transcription (on-device)** — open the Record tab, switch to
-   **Live** mode, and press the green button. Your device transcribes as
-   you speak (Android / iOS / Windows / macOS; hidden on Linux, which the
-   plugin does not support). The transcript always matches your meeting
-   because it *is* your meeting.
-2. **One-tap analysis** — press **Process AI insights**. Summaries, tasks,
-   glossary, and Q&A run on a keyless hosted model by default.
-3. **Recorded audio files** (uploads to Whisper-style endpoints) remain
-   available in **Record** mode for setups with a configured endpoint.
+1. **Record** — press the red button. Meetings save as 16 kHz WAV, the
+   exact format the on-device engine reads.
+2. **Transcribe** — press **Process AI insights**. The Whisper speech
+   model downloads once on first use (Tiny 75 MB / Base 150 MB /
+   Small 460 MB, chosen under Engine), then works fully offline.
+   Long recordings transcribe in sequential parts with progress shown.
+3. **Understand** — summaries, bench tasks, compounds, papers, and Q&A
+   follow automatically. Synthesis uses a keyless hosted open model;
+   everything else stays on your device.
 
-Until transcription is configured, audio-file analysis runs only on
-explicitly chosen sample data, which is always labeled as such.
-See `docs/PIPELINE.md` for source priority and honesty rules.
+Notes:
+- Imported MP3/M4A files transcribe directly on Android. On
+  Windows/Linux they need FFmpeg installed (`sudo apt install ffmpeg`),
+  or import a WAV file instead.
+- If no speech is found (silent audio), analysis stops with a clear
+  message instead of invented text. See `docs/PIPELINE.md`.
 
-## Local AI Engine Setup (optional, for audio-file uploads)
+## Engine settings (optional)
 
-```bash
-chmod +x scripts/setup_local_ai.sh
-./scripts/setup_local_ai.sh
-```
-
-### Example Model Options
-
-| Option | Model | Notes |
-| :--- | :--- | :--- |
-| **Local 7B** | `qwen2.5:7b` | General reasoning; needs a machine with sufficient RAM/VRAM |
-| **Biomedical-tuned 7B** | `biomistral:7b` | PubMed-oriented tuning per its model card |
-| **Smaller local** | `qwen2.5:3b` / `qwen2.5:1.5b` | Lower resource use; reduced capacity |
-| **STT example** | `faster-whisper-large-v3-turbo` | Runs via a compatible transcription server |
-
-Throughput and accuracy vary by hardware, quantization, and server version. Measure on your setup.
-
-Configure endpoints in **Settings** in the app:
-- **Transcription Endpoint**: e.g. `http://localhost:8000` or a compatible API
-- **LLM Endpoint**: e.g. `http://localhost:11434` (Ollama) or `http://localhost:8000` (vLLM)
-
-The recording deck shows red/amber/green reachability dots for both
-endpoints (tap **Test**). Until transcription is configured, analysis runs
-only on explicitly chosen sample data, which is always labeled as such.
-See `docs/PIPELINE.md` for source priority and honesty rules.
+**Engine** in the app switches the Whisper model size and explains the
+pipeline. There is nothing else to configure.
 
 ---
 

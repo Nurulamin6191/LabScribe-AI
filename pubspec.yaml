@@ -21,8 +21,8 @@ dependencies:
   audioplayers: ^5.2.1
   path_provider: ^2.1.2
 
-  # On-device live transcription (Android/iOS/Windows/macOS; no keys, no network setup)
-  speech_to_text: ^7.5.0
+  # On-device speech recognition (all platforms; models download once, no keys)
+  whisper_ggml: ^2.7.1
 
   # Networking & APIs
   dio: ^5.4.1
