@@ -15,6 +15,7 @@ import '../../../core/crypto_utils.dart';
 import '../../../core/config_service.dart';
 import '../../../core/widgets/labscribe_ui.dart';
 import '../../../core/workflow/session_workflow.dart';
+import '../../captions/live_transcribe_service.dart';
 import '../../settings/presentation/settings_view.dart';
 import '../../export/services/export_service.dart';
 import '../../history/presentation/history_view.dart';
@@ -93,6 +94,11 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   bool? _llmOk;
   bool _testingEndpoints = false;
   final Set<String> _exportedIds = {}; // sessions exported at least once (drives workflow stage)
+  String _captureMode = 'audio'; // 'audio' (file) or 'live' (on-device captions, no file)
+  final LiveTranscribeService _live = LiveTranscribeService();
+  bool _liveSupported = false;
+  String _liveBuffer = ''; // committed final phrases
+  String _livePending = ''; // latest interim result, committed on done/stop
   int _mobileNotesTab = 0; // 0 Overview, 1 Transcript
   int _mobileTasksTab = 0; // 0 Protocols, 1 Speakers
   bool _isWaitingForAiChatResponse = false;
@@ -177,6 +183,18 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
     // Enumerate connected microphones (Jabra, USB, AirPods, built-in)
     _loadAudioDevices();
+
+    // On-device live transcription (Android/iOS/Windows/macOS). Linux is
+    // unsupported by the plugin, so live mode stays hidden there.
+    _live.onStatusChanged = _onLiveStatus;
+    _live.init().then((ok) {
+      if (mounted) {
+        setState(() {
+          _liveSupported = ok;
+          if (!ok) _captureMode = 'audio';
+        });
+      }
+    });
   }
 
   @override
@@ -220,7 +238,107 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   // --- Audio Recording Lifecycle with Hardware Noise Suppression ---
 
+  void _onLiveStatus(String status) {
+    if (!mounted) return;
+    // OS recognizers end the session after pauses or platform time limits;
+    // restart automatically to keep capturing the meeting continuously.
+    if ((status == 'done' || status == 'notListening') &&
+        _recordingState == RecordingState.recording &&
+        _captureMode == 'live') {
+      _commitLivePending();
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (mounted &&
+            _recordingState == RecordingState.recording &&
+            _captureMode == 'live' &&
+            !_live.isListening) {
+          _startLiveListening();
+        }
+      });
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _commitLivePending() {
+    final w = _livePending.trim();
+    if (w.isEmpty) return;
+    if (_liveBuffer.endsWith(w)) {
+      _livePending = '';
+      return;
+    }
+    _liveBuffer = _liveBuffer.isEmpty ? w : '$_liveBuffer $w';
+    _livePending = '';
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _startLiveListening() async {
+    String? locale;
+    try {
+      if (_selectedLanguage == 'hi') {
+        final ids = await _live.localeIds();
+        for (final id in ids) {
+          if (id.toLowerCase().startsWith('hi')) {
+            locale = id;
+            break;
+          }
+        }
+      }
+    } catch (_) {
+      locale = null;
+    }
+    // Device default locale otherwise (best for English and Hinglish).
+    await _live.start(
+      localeId: locale,
+      onResult: (words) {
+        _livePending = words;
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  /// Live-capture path: no audio file, the transcript IS the meeting.
+  Future<void> _startLiveCapture() async {
+    if (!_liveSupported) {
+      _showSnackBar('Live transcription is not available on this device or platform.');
+      return;
+    }
+    try {
+      setState(() {
+        _recordingState = RecordingState.recording;
+        _recordDurationSeconds = 0;
+        _recordedAudioPath = null;
+        _liveBuffer = '';
+        _livePending = '';
+        _isDemoContent = false;
+        _statusMessage = 'Live transcription running on-device...';
+        _currentSession = MeetingSession(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          title: _titleController.text.trim().isEmpty ? 'Live Transcription' : _titleController.text.trim(),
+          createdAt: DateTime.now(),
+          audioPath: '',
+          durationSeconds: 0,
+          isDeIdentified: _enableClinicalDeIdentification,
+          isVirtualCall: _isVirtualCallMode,
+        );
+      });
+      _startTimer();
+      await _startLiveListening();
+      if (!_live.isListening) {
+        _timer?.cancel();
+        setState(() {
+          _recordingState = RecordingState.idle;
+          _statusMessage = 'Could not start the on-device recognizer. Try Record-audio mode or an endpoint.';
+        });
+      }
+    } catch (e) {
+      _showSnackBar('Error starting live transcription: $e');
+    }
+  }
+
   Future<void> _startRecording() async {
+    if (_captureMode == 'live') {
+      await _startLiveCapture();
+      return;
+    }
     try {
       if (await _audioRecorder.hasPermission()) {
         final dir = await getApplicationDocumentsDirectory();
@@ -268,6 +386,16 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   Future<void> _pauseRecording() async {
+    if (_captureMode == 'live') {
+      await _live.stop();
+      _commitLivePending();
+      _timer?.cancel();
+      setState(() {
+        _recordingState = RecordingState.paused;
+        _statusMessage = 'Live transcription paused.';
+      });
+      return;
+    }
     try {
       await _audioRecorder.pause();
       _timer?.cancel();
@@ -281,6 +409,19 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   Future<void> _resumeRecording() async {
+    if (_captureMode == 'live') {
+      try {
+        setState(() {
+          _recordingState = RecordingState.recording;
+          _statusMessage = 'Live transcription running on-device...';
+        });
+        _startTimer();
+        await _startLiveListening();
+      } catch (e) {
+        _showSnackBar('Error resuming live transcription: $e');
+      }
+      return;
+    }
     try {
       await _audioRecorder.resume();
       _startTimer();
@@ -294,6 +435,28 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   Future<void> _stopRecording() async {
+    if (_captureMode == 'live' && _recordingState != RecordingState.idle) {
+      _timer?.cancel();
+      await _live.stop();
+      _commitLivePending();
+      final text = _liveBuffer.trim();
+      setState(() {
+        _recordingState = RecordingState.stopped;
+        _statusMessage = text.isEmpty
+            ? 'Stopped — no speech was recognized.'
+            : 'Live transcript ready. Review the text or run analysis.';
+        if (_currentSession != null) {
+          _currentSession!.transcript = text;
+          _currentSession!.durationSeconds = _recordDurationSeconds;
+          _currentSession!.title = _titleController.text.trim().isEmpty ? 'Live Transcription' : _titleController.text.trim();
+          _transcriptEditController.text = text;
+        }
+      });
+      if (_currentSession != null) {
+        await SessionRepository().saveSession(_currentSession!);
+      }
+      return;
+    }
     try {
       _timer?.cancel();
       final path = await _audioRecorder.stop();
@@ -894,8 +1057,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   bool get _sttConfigured => !widget.intelligenceService.isTranscriptionDemoMode;
 
   Future<void> _executeAiPipeline({bool useDemoSample = false}) async {
-    if (_recordedAudioPath == null && _currentSession?.audioPath == null) {
-      _showSnackBar('No audio file found. Please record or import a session first.');
+    final audioPath = (_currentSession?.audioPath?.isNotEmpty == true)
+        ? _currentSession!.audioPath
+        : _recordedAudioPath;
+    final existingTranscript = _currentSession?.transcript.trim() ?? '';
+    if ((audioPath == null || audioPath.isEmpty) && existingTranscript.isEmpty) {
+      _showSnackBar('No audio or transcript found. Record, import, paste, or live-transcribe first.');
       return;
     }
 
@@ -917,16 +1084,26 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       if (_selectedLanguage == 'hi') langHint = 'hi';
       if (_selectedLanguage == 'hinglish') langHint = 'hinglish';
 
-      String transcript = await widget.intelligenceService.transcribeAudio(
-        audioFilePath: _currentSession?.audioPath ?? _recordedAudioPath!,
-        languageHint: langHint,
-        allowDemoSample: useDemoSample,
-        onProgress: (status) {
-          setState(() {
-            _statusMessage = status;
-          });
-        },
-      );
+      String transcript;
+      if (audioPath != null && audioPath.isNotEmpty) {
+        transcript = await widget.intelligenceService.transcribeAudio(
+          audioFilePath: audioPath,
+          languageHint: langHint,
+          allowDemoSample: useDemoSample,
+          onProgress: (status) {
+            setState(() {
+              _statusMessage = status;
+            });
+          },
+        );
+      } else {
+        // Live-transcribed or pasted text: it already matches the meeting,
+        // so skip the upload step entirely and go straight to synthesis.
+        transcript = existingTranscript;
+        setState(() {
+          _statusMessage = 'Using your transcript — skipping audio upload...';
+        });
+      }
 
       // 2. Client-Side Clinical De-Identification (if enabled)
       if (_enableClinicalDeIdentification) {
@@ -1422,6 +1599,18 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   style: TextStyle(fontSize: 13, height: 1.45),
                 ),
                 const SizedBox(height: 12),
+                if (_liveSupported) ...[
+                  const Text('OPTION 0 · LIVE TRANSCRIPTION (NO SETUP)', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+                  const SizedBox(height: 4),
+                  const Text('Your device transcribes as you speak — no endpoint, key, or upload needed.', style: TextStyle(fontSize: 12.5, height: 1.4)),
+                  const SizedBox(height: 8),
+                  FilledButton.tonalIcon(
+                    onPressed: () => Navigator.pop(ctx, 'live'),
+                    icon: const Icon(Icons.graphic_eq, size: 16),
+                    label: const Text('Switch to Live mode'),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 const Text('OPTION 1 · FREE CLOUD KEY (ABOUT 2 MINUTES)', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
                 const SizedBox(height: 4),
                 const Text('Create a free key at console.groq.com and paste it below. Uses Whisper Large-v3 + Llama 3.3.', style: TextStyle(fontSize: 12.5, height: 1.4)),
@@ -1510,7 +1699,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   Future<void> _runSetupFlow() async {
     final choice = await _showSetupWizard();
-    if (choice == 'sample') {
+    if (choice == 'live') {
+      setState(() => _captureMode = 'live');
+      _showSnackBar('Live transcription mode on — press Record.');
+    } else if (choice == 'sample') {
       await _executeAiPipeline(useDemoSample: true);
     } else if (choice == 'retry') {
       await _executeAiPipeline();
@@ -2478,6 +2670,16 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           ),
           const SizedBox(height: 14),
           _timerHero(theme, large: true),
+          if (_captureMode == 'live' && (_livePending.isNotEmpty || _liveBuffer.isNotEmpty)) ...[
+            const SizedBox(height: 8),
+            Text(
+              _livePending.isNotEmpty ? _livePending : _liveBuffer,
+              style: TextStyle(fontSize: 12.5, height: 1.45, color: theme.colorScheme.outline),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+          ],
           const SizedBox(height: 12),
           _buildAudioDeviceSelector(theme),
           const SizedBox(height: 8),
@@ -2689,20 +2891,40 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   Widget _recordActions(ThemeData theme, {bool compact = false}) {
     final idle = _recordingState == RecordingState.idle || _recordingState == RecordingState.stopped;
     if (idle) {
+      final live = _captureMode == 'live';
+      final fabColor = live ? const Color(0xFF00A884) : const Color(0xFFD92D20);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          FilledButton.icon(
-            onPressed: _startRecording,
-            icon: const Icon(Icons.fiber_manual_record, size: 16),
-            label: const Text('Start Recording'),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFD92D20),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 15),
+          Center(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(41),
+              onTap: _startRecording,
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: fabColor,
+                  boxShadow: [
+                    BoxShadow(
+                      color: fabColor.withValues(alpha: 0.4),
+                      blurRadius: 18,
+                      offset: const Offset(0, 7),
+                    ),
+                  ],
+                ),
+                child: Icon(live ? Icons.graphic_eq : Icons.mic, color: Colors.white, size: 33),
+              ),
             ),
           ),
           const SizedBox(height: 8),
+          Text(
+            live ? 'Tap to start live transcription' : 'Tap to start recording',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
@@ -3103,6 +3325,76 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
+  bool get _liveModeAvailable => _liveSupported && !Platform.isLinux;
+
+  Widget _captureModeSelector(ThemeData theme) {
+    if (Platform.isLinux) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionLabel('Capture mode'),
+        const SizedBox(height: 8),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'audio', icon: Icon(Icons.mic_outlined, size: 15), label: Text('Record', style: TextStyle(fontSize: 12))),
+            ButtonSegment(value: 'live', icon: Icon(Icons.graphic_eq_outlined, size: 15), label: Text('Live', style: TextStyle(fontSize: 12))),
+          ],
+          selected: {_captureMode},
+          onSelectionChanged: _recordingState == RecordingState.recording
+              ? null
+              : (s) => setState(() => _captureMode = s.first),
+          showSelectedIcon: false,
+          style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _captureMode == 'live'
+              ? 'Live: your device transcribes as you speak. No file, no upload, no keys.'
+              : 'Audio: saves a file for endpoint transcription and playback.',
+          style: TextStyle(fontSize: 11, color: theme.colorScheme.outline),
+        ),
+      ],
+    );
+  }
+
+  Widget _liveCaptionCard(ThemeData theme) {
+    final text = _livePending.isNotEmpty ? _livePending : _liveBuffer;
+    return LabCard(
+      padding: const EdgeInsets.all(13),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _recordingState == RecordingState.recording ? const Color(0xFF00A884) : Colors.grey,
+                ),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                _recordingState == RecordingState.recording ? 'LISTENING…' : 'LIVE TRANSCRIPT',
+                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.9),
+              ),
+              const Spacer(),
+              Text('${_wordCount(_liveBuffer)} words', style: TextStyle(fontSize: 11, color: theme.colorScheme.outline)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            text.isEmpty ? 'Speak now — words appear here in real time.' : text,
+            style: TextStyle(fontSize: 13, height: 1.5, color: text.isEmpty ? theme.colorScheme.outline : theme.colorScheme.onSurface),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _quickTags(ThemeData theme, {bool dense = false}) {
     Widget tag(IconData icon, String label, String emoji, String tagLabel, Color color) {
       return InkWell(
@@ -3179,8 +3471,14 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         _buildAudioDeviceSelector(theme),
         const SizedBox(height: 8),
         _buildLanguageSelector(theme),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
+        _captureModeSelector(theme),
+        const SizedBox(height: 10),
         _timerHero(theme),
+        if (_captureMode == 'live') ...[
+          const SizedBox(height: 10),
+          _liveCaptionCard(theme),
+        ],
         const SizedBox(height: 12),
         _recordActions(theme),
         const SizedBox(height: 12),
@@ -3592,8 +3890,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                             return InkWell(
                               onTap: () => _seekAudio(turn.startSeconds),
                               borderRadius: BorderRadius.circular(12),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
+                                decoration: BoxDecoration(
+                                  color: index.isOdd ? theme.colorScheme.primaryContainer.withValues(alpha: 0.45) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
@@ -4323,6 +4625,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               final speakerColor = _getSpeakerColor(turn.speakerId);
               return LabCard(
                 padding: const EdgeInsets.all(14),
+                color: index.isOdd ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35) : null,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -4668,7 +4971,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                           constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
                           decoration: BoxDecoration(
-                            color: isUser ? theme.colorScheme.primary : theme.colorScheme.surfaceContainerLow,
+                            color: isUser ? theme.colorScheme.primaryContainer : theme.colorScheme.surfaceContainerLowest,
                             borderRadius: BorderRadius.only(
                               topLeft: const Radius.circular(16),
                               topRight: const Radius.circular(16),
@@ -4679,7 +4982,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                           ),
                           child: Text(
                             msg.text,
-                            style: TextStyle(fontSize: 13.2, height: 1.5, color: isUser ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface),
+                            style: TextStyle(fontSize: 13.2, height: 1.5, color: isUser ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurface),
                           ),
                         ),
                       ),

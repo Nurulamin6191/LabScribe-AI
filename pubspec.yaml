@@ -1,7 +1,7 @@
 name: labscribe
 description: "Cross-platform AI companion for scientific meetings, lab discussions, and research lectures"
 publish_to: "none"
-version: 1.4.0+4
+version: 1.5.0+5
 
 environment:
   sdk: ">=3.2.0 <4.0.0"
@@ -20,6 +20,9 @@ dependencies:
   record: ^5.1.2
   audioplayers: ^5.2.1
   path_provider: ^2.1.2
+
+  # On-device live transcription (Android/iOS/Windows/macOS; no keys, no network setup)
+  speech_to_text: ^7.5.0
 
   # Networking & APIs
   dio: ^5.4.1

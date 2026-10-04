@@ -35,7 +35,10 @@ class SessionWorkflow {
     required bool hasSummary,
     required bool exported,
   }) {
-    if (!hasAudio || isRecording) return SessionStage.capture;
+    // Live-transcribed or pasted sessions have text but no file: they join
+    // the flow at synthesis instead of sitting in capture forever.
+    if (!hasAudio && !hasTranscript) return SessionStage.capture;
+    if (isRecording) return SessionStage.capture;
     if (!hasTranscript) return SessionStage.transcribe;
     if (!hasSummary) return SessionStage.synthesize;
     if (!exported) return SessionStage.review;

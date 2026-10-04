@@ -109,17 +109,25 @@ flowchart TD
 
 ---
 
-## Local AI Engine Setup
+## Getting real results with zero setup
 
-You have three options, in order of effort. The app guides you on first use:
-pressing **Process AI insights** without a transcription endpoint opens a
-setup wizard (paste a Groq key, open Settings, or explicitly use sample data).
+No API keys, no terminal, no URLs needed for the default path:
 
-**Fastest real transcription (~2 minutes, free):** create a key at
-`console.groq.com` and paste it in the wizard or Settings preset
-`Cloud: Groq`. This enables Whisper Large-v3 + Llama 3.3.
+1. **Live transcription (on-device)** — open the Record tab, switch to
+   **Live** mode, and press the green button. Your device transcribes as
+   you speak (Android / iOS / Windows / macOS; hidden on Linux, which the
+   plugin does not support). The transcript always matches your meeting
+   because it *is* your meeting.
+2. **One-tap analysis** — press **Process AI insights**. Summaries, tasks,
+   glossary, and Q&A run on a keyless hosted model by default.
+3. **Recorded audio files** (uploads to Whisper-style endpoints) remain
+   available in **Record** mode for setups with a configured endpoint.
 
-Optional fully local setup:
+Until transcription is configured, audio-file analysis runs only on
+explicitly chosen sample data, which is always labeled as such.
+See `docs/PIPELINE.md` for source priority and honesty rules.
+
+## Local AI Engine Setup (optional, for audio-file uploads)
 
 ```bash
 chmod +x scripts/setup_local_ai.sh

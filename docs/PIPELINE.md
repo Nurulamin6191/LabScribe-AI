@@ -5,11 +5,16 @@ rules that keep the app honest about where every word came from.
 
 ## 1. Transcript sources (in priority order)
 
-1. **Configured transcription endpoint** (`Settings → Transcription`).
-   Examples: Groq `whisper-large-v3`, OpenAI `whisper-1`, or a local
-   Faster-Whisper server. Supports chunked uploads above ~24 MB with a
-   biomedical vocabulary prompt and rolling context.
-2. **Built-in sample** — only when the user explicitly chooses
+1. **Live on-device transcription** (`Record → Live` mode). The OS
+   recognizer transcribes as you speak; there is no file and no upload,
+   so the transcript matches the meeting by construction. No keys needed.
+   Unavailable on Linux (unsupported by the plugin), where Live mode is
+   hidden instead of broken.
+2. **Configured transcription endpoint** (`Settings → Transcription`)
+   for recorded audio files. Examples: Groq `whisper-large-v3`, OpenAI
+   `whisper-1`, or a local Faster-Whisper server. Files above ~24 MB are
+   chunked with a biomedical vocabulary prompt and rolling context.
+3. **Built-in sample** — only when the user explicitly chooses
    “Use sample” / “View sample”. The UI then shows a `DemoBanner`
    (“Sample data — a built-in example, not your recording”) on the
    Overview and Transcript tabs until new real input arrives.
@@ -33,21 +38,21 @@ silently replaced with sample text.
 
 ## 3. Why no on-device transcription plugin
 
-Evaluated and deliberately not adopted:
+Revisited and partially adopted (v1.5.0): `speech_to_text` now powers
+**Live capture mode**, with two deliberate constraints drawn from the
+plugin's own docs:
 
-- `speech_to_text` (the standard Flutter plugin) has **no Linux
-  implementation**, and this project ships a Linux `.deb` built in CI —
-  adding the dependency risks that build for zero Linux benefit.
-- On **Android, recording audio and running speech recognition at the
-  same time conflict** over the microphone (documented plugin
-  limitation); live captions during recording would be unreliable on
-  the primary mobile platform.
-- OS recognizers are tuned for dictation/commands, not multi-speaker
-  biomedical discourse with gene/drug casing requirements.
+- **No Linux implementation** exists, so Live mode is hidden there
+  instead of failing. Linux keeps file recording + endpoints.
+- **Recording audio and recognizing simultaneously conflict on
+  Android**, so Live mode captures captions *instead of* a file — there
+  is no playback seek for live sessions, and the UI says so.
 
-If this changes, the seam is `MeetingIntelligenceService.transcribeAudio`:
-add a new source branch ahead of the endpoint call and keep the
-`allowDemoSample` gate unchanged.
+The plugin's short-session behavior (stops after pauses / platform time
+limits with status `done`) is handled by auto-restart in
+`RecorderView._onLiveStatus`, and only the long-stable API surface is
+used (`initialize`, `listen(onResult:, localeId:)`, `stop`,
+`isListening`, `locales`).
 
 ## 4. Endpoint setup paths (what the wizard offers)
 

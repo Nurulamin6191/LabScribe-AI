@@ -52,6 +52,16 @@ below 900px a 5-destination bottom bar groups related tabs
 
 ## 3. Design tokens
 
+Borrowed from messaging/learning leaders, adapted for research:
+
+- **WhatsApp warmth**: paper background (`#ECE5DB`), white cards,
+  deep-green header (`#008069`), bright-green FAB and primary actions
+  (`#00A884`), pale-green outgoing bubbles (`#D9FDD3`), night theme
+  (`#0B141A` / `#1F2C34`) with mint accents.
+- **Unacademy clarity**: bright-green CTAs, 12–16px card rows with
+  avatars, badge counts (open tasks as unread-style badges), bottom
+  navigation with 5 grouped destinations.
+
 - Radii: 20px cards, 14px inputs/buttons, 99px pills and meters.
 - Stage accents are fixed per stage (capture red, transcribe amber,
   synthesize indigo, review teal, export green) and appear only in the

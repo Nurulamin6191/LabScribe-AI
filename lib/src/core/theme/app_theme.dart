@@ -1,59 +1,102 @@
 import 'package:flutter/material.dart';
 
-/// LabScribe Aurora Lab design system.
-/// Premium scientific companion aesthetic: deep lab ink, living teal,
-/// compliance indigo, signal amber. Calm surfaces, high legibility,
-/// generous radii, zero clutter.
+/// LabScribe chat-warm design system.
+///
+/// Inspired by the world's most-used messaging and learning apps:
+/// WhatsApp's warm paper surfaces, deep-green header, glowing action
+/// button and chat bubbles; Unacademy's bright-green CTAs and clean
+/// card rows. Applied to a research companion: credible, friendly,
+/// instantly familiar — never dull.
+///
+/// Light:  paper background, white cards, deep-green header, bright-green
+///          primary actions, pale-green outgoing bubbles.
+/// Dark:    WhatsApp-night background and surfaces, mint-green accents.
 class LabScribeTheme {
-  static const _seedTeal = Color(0xFF0A7C6B);
-  static const _labIndigo = Color(0xFF3B5BFF);
-  static const _signalAmber = Color(0xFFB77900);
+  // WhatsApp greens + Unacademy-bright CTA green (same family).
+  static const _waDeepGreen = Color(0xFF008069);
+  static const _waBrightGreen = Color(0xFF00A884);
+  static const _waBubble = Color(0xFFD9FDD3);
+  static const _waBubbleInk = Color(0xFF0B3D2E);
+  static const _waNightBubble = Color(0xFF005C4B);
+  static const _amber = Color(0xFFB77900);
   static const _signalRed = Color(0xFFD92D20);
 
   static ThemeData light() {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: _seedTeal,
+    final scheme = ColorScheme(
       brightness: Brightness.light,
-    ).copyWith(
-      primary: const Color(0xFF0A7C6B),
+      primary: _waDeepGreen,
       onPrimary: Colors.white,
-      primaryContainer: const Color(0xFFCFF3E8),
-      onPrimaryContainer: const Color(0xFF06382F),
-      secondary: const Color(0xFF3B5BFF),
-      secondaryContainer: const Color(0xFFE2E7FF),
-      onSecondaryContainer: const Color(0xFF1A2566),
-      tertiary: const Color(0xFFB77900),
-      tertiaryContainer: const Color(0xFFFFEFC7),
-      surface: const Color(0xFFFAFBF9),
-      surfaceContainerLowest: Colors.white,
-      surfaceContainerLow: const Color(0xFFF1F4F2),
-      surfaceContainerHighest: const Color(0xFFE6ECEA),
-      outlineVariant: const Color(0xFFD3DBD8),
+      primaryContainer: _waBubble,
+      onPrimaryContainer: _waBubbleInk,
+      secondary: _waBrightGreen,
+      onSecondary: Colors.white,
+      secondaryContainer: const Color(0xFFCCEFE3),
+      onSecondaryContainer: const Color(0xFF06382F),
+      tertiary: _amber,
+      onTertiary: Colors.white,
+      tertiaryContainer: const Color(0xFFF7E8C3),
+      onTertiaryContainer: const Color(0xFF4A3600),
       error: _signalRed,
+      onError: Colors.white,
+      errorContainer: const Color(0xFFFDE7E5),
+      onErrorContainer: const Color(0xFF7A1F1A),
+      surface: const Color(0xFFECE5DB),
+      onSurface: const Color(0xFF111B21),
+      surfaceContainerHighest: const Color(0xFFE2DACA),
+      surfaceContainerHigh: const Color(0xFFF1EBDF),
+      surfaceContainer: const Color(0xFFF7F3EC),
+      surfaceContainerLow: const Color(0xFFFBF8F2),
+      surfaceContainerLowest: Colors.white,
+      surfaceDim: const Color(0xFFE5DCCd),
+      surfaceBright: Colors.white,
+      onSurfaceVariant: const Color(0xFF667781),
+      outline: const Color(0xFF8A8378),
+      outlineVariant: const Color(0xFFD5CFC2),
+      shadow: const Color(0xFF111B21),
+      scrim: const Color(0xFF111B21),
+      inverseSurface: const Color(0xFF111B21),
+      onInverseSurface: const Color(0xFFF4EEE3),
+      inversePrimary: _waBrightGreen,
     );
     return _build(scheme);
   }
 
   static ThemeData dark() {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF4ED6B8),
+    final scheme = ColorScheme(
       brightness: Brightness.dark,
-    ).copyWith(
-      primary: const Color(0xFF4ED6B8),
-      onPrimary: const Color(0xFF052E27),
-      primaryContainer: const Color(0xFF0B3D34),
-      onPrimaryContainer: const Color(0xFFCFF3E8),
-      secondary: const Color(0xFF9DAFFF),
-      secondaryContainer: const Color(0xFF232D6B),
-      onSecondaryContainer: const Color(0xFFE2E7FF),
-      tertiary: const Color(0xFFFFC53D),
+      primary: _waBrightGreen,
+      onPrimary: const Color(0xFF06281F),
+      primaryContainer: _waNightBubble,
+      onPrimaryContainer: const Color(0xFFD9FDD3),
+      secondary: _waBrightGreen,
+      onSecondary: const Color(0xFF06281F),
+      secondaryContainer: const Color(0xFF0B3D34),
+      onSecondaryContainer: const Color(0xFFCFF3E8),
+      tertiary: const Color(0xFFE8A100),
+      onTertiary: const Color(0xFF2A1D00),
       tertiaryContainer: const Color(0xFF4A3600),
-      surface: const Color(0xFF080F14),
-      surfaceContainerLowest: const Color(0xFF0B151C),
-      surfaceContainerLow: const Color(0xFF111D24),
-      surfaceContainerHighest: const Color(0xFF1B2C34),
-      outlineVariant: const Color(0xFF2A3E46),
+      onTertiaryContainer: const Color(0xFFFFEFC7),
       error: const Color(0xFFFF8A80),
+      onError: const Color(0xFF3D0A06),
+      errorContainer: const Color(0xFF5C1512),
+      onErrorContainer: const Color(0xFFFDE7E5),
+      surface: const Color(0xFF0B141A),
+      onSurface: const Color(0xFFE9EDEF),
+      surfaceContainerHighest: const Color(0xFF2A3942),
+      surfaceContainerHigh: const Color(0xFF1F2C34),
+      surfaceContainer: const Color(0xFF182229),
+      surfaceContainerLow: const Color(0xFF111B21),
+      surfaceContainerLowest: const Color(0xFF1F2C34),
+      surfaceDim: const Color(0xFF0B141A),
+      surfaceBright: const Color(0xFF2A3942),
+      onSurfaceVariant: const Color(0xFF8696A0),
+      outline: const Color(0xFF8696A0),
+      outlineVariant: const Color(0xFF37474F),
+      shadow: Colors.black,
+      scrim: Colors.black,
+      inverseSurface: const Color(0xFFE9EDEF),
+      onInverseSurface: const Color(0xFF111B21),
+      inversePrimary: _waDeepGreen,
     );
     return _build(scheme);
   }
@@ -67,22 +110,24 @@ class LabScribeTheme {
       splashFactory: InkSparkle.splashFactory,
       textTheme: _textTheme(scheme),
       appBarTheme: AppBarTheme(
-        backgroundColor: scheme.surface,
-        foregroundColor: scheme.onSurface,
+        backgroundColor: isDark ? const Color(0xFF1F2C34) : _waDeepGreen,
+        foregroundColor: isDark ? const Color(0xFFE9EDEF) : Colors.white,
         elevation: 0,
         scrolledUnderElevation: 1,
         centerTitle: false,
-        titleTextStyle: TextStyle(
+        titleTextStyle: const TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.w800,
           letterSpacing: -0.2,
-          color: scheme.onSurface,
+          color: Colors.white,
         ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
         margin: EdgeInsets.zero,
-        color: isDark ? scheme.surfaceContainerLow : scheme.surfaceContainerLowest,
+        color: scheme.surfaceContainerLowest,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.55)),
@@ -122,6 +167,12 @@ class LabScribeTheme {
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: _waBrightGreen,
+        foregroundColor: Colors.white,
+        shape: const CircleBorder(),
+        elevation: 4,
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: isDark ? scheme.surfaceContainerLow : scheme.surfaceContainerLow,
@@ -136,23 +187,28 @@ class LabScribeTheme {
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.7)),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: scheme.primary, width: 1.6),
+        focusedBorder: const OutlineInputBorder(
+          borderRadius: BorderRadius.all(Radius.circular(14)),
+          borderSide: BorderSide(color: _waBrightGreen, width: 1.6),
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: scheme.surface,
+        backgroundColor: isDark ? const Color(0xFF1F2C34) : Colors.white,
         elevation: 0,
-        indicatorColor: scheme.primaryContainer,
-        labelTextStyle: WidgetStatePropertyAll(
-          const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+        indicatorColor: (isDark ? _waBrightGreen : _waDeepGreen).withValues(alpha: 0.16),
+        iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
+              color: states.contains(WidgetState.selected)
+                  ? (isDark ? _waBrightGreen : _waDeepGreen)
+                  : null,
+            )),
+        labelTextStyle: const WidgetStatePropertyAll(
+          TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
         ),
       ),
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: scheme.surface,
-        indicatorColor: scheme.primaryContainer,
-        selectedIconTheme: IconThemeData(color: scheme.onPrimaryContainer),
+        indicatorColor: _waDeepGreen.withValues(alpha: 0.14),
+        selectedIconTheme: const IconThemeData(color: _waDeepGreen),
         unselectedIconTheme: IconThemeData(color: scheme.outline),
         selectedLabelTextStyle: TextStyle(
           color: scheme.onSurface,
@@ -161,16 +217,31 @@ class LabScribeTheme {
         ),
         unselectedLabelTextStyle: TextStyle(color: scheme.outline, fontSize: 11),
       ),
-      tabBarTheme: TabBarThemeData(
-        labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
-        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+      tabBarTheme: const TabBarThemeData(
+        labelStyle: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+        unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((s) =>
-            s.contains(WidgetState.selected) ? scheme.primary : null),
+            s.contains(WidgetState.selected) ? _waBrightGreen : null),
+        trackColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.selected) ? _waDeepGreen.withValues(alpha: 0.4) : null),
       ),
-      dialogTheme: DialogThemeData(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith((s) =>
+            s.contains(WidgetState.selected) ? _waDeepGreen : null),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+      ),
+      sliderTheme: const SliderThemeData(
+        activeTrackColor: _waBrightGreen,
+        thumbColor: _waBrightGreen,
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        linearTrackColor: scheme.surfaceContainerHighest,
+        color: _waBrightGreen,
+      ),
+      dialogTheme: const DialogThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(24))),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
         shape: RoundedRectangleBorder(
@@ -183,9 +254,9 @@ class LabScribeTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       dividerTheme: DividerThemeData(color: scheme.outlineVariant.withValues(alpha: 0.6)),
-      progressIndicatorTheme: ProgressIndicatorThemeData(
-        linearTrackColor: scheme.surfaceContainerHighest,
-        color: scheme.primary,
+      badgeTheme: const BadgeThemeData(
+        backgroundColor: _waBrightGreen,
+        textColor: Colors.white,
       ),
     );
   }
@@ -203,9 +274,9 @@ class LabScribeTheme {
       titleSmall: base(scheme.onSurface, 13, FontWeight.w700),
       bodyLarge: base(scheme.onSurface, 14.5, FontWeight.w400, 1.6),
       bodyMedium: base(scheme.onSurface, 13.5, FontWeight.w400, 1.55),
-      bodySmall: base(scheme.outline, 12, FontWeight.w500, 1.45),
+      bodySmall: base(scheme.onSurfaceVariant, 12, FontWeight.w500, 1.45),
       labelLarge: base(scheme.onSurface, 13, FontWeight.w700),
-      labelSmall: base(scheme.outline, 11, FontWeight.w700, 1.3),
+      labelSmall: base(scheme.onSurfaceVariant, 11, FontWeight.w700, 1.3),
     );
   }
 }

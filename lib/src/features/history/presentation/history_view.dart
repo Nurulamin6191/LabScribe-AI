@@ -208,38 +208,81 @@ class _HistoryViewState extends State<HistoryView> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Container(
-                                  width: 38,
-                                  height: 38,
+                                  width: 52,
+                                  height: 52,
                                   decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                                    shape: BoxShape.circle,
+                                    color: theme.colorScheme.primaryContainer.withValues(alpha: 0.55),
                                   ),
                                   child: Icon(
                                     session.isVirtualCall ? Icons.video_call_outlined : Icons.science_outlined,
-                                    size: 18,
+                                    size: 24,
                                     color: theme.colorScheme.primary,
                                   ),
                                 ),
-                                const SizedBox(width: 11),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         session.title,
-                                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
                                         overflow: TextOverflow.ellipsis,
                                       ),
-                                      Text(
-                                        '${session.createdAt.toLocal().toString().split('.')[0]} · ${formatHMS(session.durationSeconds)}',
-                                        style: TextStyle(fontSize: 11, color: theme.colorScheme.outline, fontFeatures: const [FontFeature.tabularFigures()]),
+                                      const SizedBox(height: 3),
+                                      Builder(
+                                        builder: (context) {
+                                          final preview = session.summary?.scientificHypothesis.isNotEmpty == true
+                                              ? session.summary!.scientificHypothesis
+                                              : (session.transcript.isNotEmpty
+                                                  ? session.transcript
+                                                  : 'No transcript yet — tap to open.');
+                                          return Text(
+                                            preview,
+                                            style: TextStyle(fontSize: 12.5, color: theme.colorScheme.onSurfaceVariant, height: 1.35),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          );
+                                        },
                                       ),
                                     ],
                                   ),
                                 ),
-                                const Icon(Icons.chevron_right, size: 18),
+                                const SizedBox(width: 8),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      session.createdAt.toLocal().toString().split(' ')[0],
+                                      style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()]),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    Builder(
+                                      builder: (context) {
+                                        final open = session.actionItems.where((e) => !e.isCompleted).length;
+                                        if (open == 0) return const SizedBox.shrink();
+                                        return Container(
+                                          minWidth: 20,
+                                          height: 20,
+                                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                                          decoration: const BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Color(0xFF00A884),
+                                          ),
+                                          alignment: Alignment.center,
+                                          child: Text(
+                                            '$open',
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
                             if (session.summary?.scientificHypothesis.isNotEmpty == true) ...[
