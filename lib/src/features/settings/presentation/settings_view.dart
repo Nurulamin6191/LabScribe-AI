@@ -230,7 +230,7 @@ class _SettingsViewState extends State<SettingsView> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Choose a self-hosted endpoint (Ollama / vLLM), a cloud API, or the built-in demo.';
+              'Choose a self-hosted endpoint (Ollama / vLLM), a cloud API, or the built-in demo.',
               style: TextStyle(color: Colors.grey, fontSize: 13),
             ),
             const SizedBox(height: 14),
