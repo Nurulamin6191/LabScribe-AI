@@ -215,7 +215,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   Future<void> _startRecording() async {
     try {
-      if (await _audioRecorder.hasPermission()) {      if (await _audioRecorder.hasPermission()) {
+      if (await _audioRecorder.hasPermission()) {
         final dir = await getApplicationDocumentsDirectory();
         final timestamp = DateTime.now().millisecondsSinceEpoch;
         final filePath = '${dir.path}/session_$timestamp.wav';
@@ -261,7 +261,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   Future<void> _pauseRecording() async {
     try {
-      await _audioRecorder.pause();      await _audioRecorder.pause();
+      await _audioRecorder.pause();
       _timer?.cancel();
       setState(() {
         _recordingState = RecordingState.paused;
@@ -274,7 +274,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   Future<void> _resumeRecording() async {
     try {
-      await _audioRecorder.resume();      await _audioRecorder.resume();
+      await _audioRecorder.resume();
       _startTimer();
       setState(() {
         _recordingState = RecordingState.recording;
@@ -286,6 +286,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   Future<void> _stopRecording() async {
+    try {
       _timer?.cancel();
       final path = await _audioRecorder.stop();
 
