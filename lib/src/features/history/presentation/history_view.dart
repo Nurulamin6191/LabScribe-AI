@@ -266,8 +266,7 @@ class _HistoryViewState extends State<HistoryView> {
                                         final open = session.actionItems.where((e) => !e.isCompleted).length;
                                         if (open == 0) return const SizedBox.shrink();
                                         return Container(
-                                          minWidth: 20,
-                                          height: 20,
+                                          constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                                           padding: const EdgeInsets.symmetric(horizontal: 6),
                                           decoration: const BoxDecoration(
                                             shape: BoxShape.circle,
