@@ -19,18 +19,18 @@ class _SettingsViewState extends State<SettingsView> {
   late TextEditingController _transcriptionModelController;
   late TextEditingController _translateUrlController;
   
-  String _selectedPreset = '⚡ Zero-Setup Instant Open AI (Default — Just Install & Use)';
+  String _selectedPreset = 'Built-in demo (no endpoint configuration)';
 
   final List<String> _presets = [
-    '⚡ Zero-Setup Instant Open AI (Default — Just Install & Use)',
-    '📴 100% Offline Built-In Engine (Air-Gapped / No Internet)',
-    '☁️ Cloud: Groq Fast Tier (Whisper Large-v3 + Llama 3.3)',
-    '☁️ Cloud: OpenAI (Whisper-1 + GPT-4o-mini)',
-    '💻 Local PC: Balanced (Qwen 2.5 7B + Faster-Whisper)',
-    '💻 Local PC: Biomedical Specialist (BioMistral 7B + Faster-Whisper)',
-    '💻 Local PC: Ultra-Compact (Qwen 2.5 1.5B + Whisper Base)',
-    '🔬 Lab Server: vLLM High-Throughput (Port 8000)',
-    '⚙️ Custom Endpoint',
+    'Built-in demo (no endpoint configuration)',
+    'Offline demo responses (no network calls)',
+    'Cloud: Groq (Whisper Large-v3 + Llama 3.3)',
+    'Cloud: OpenAI (Whisper-1 + GPT-4o-mini)',
+    'Local: Balanced (Qwen 2.5 7B + Faster-Whisper)',
+    'Local: Biomedical-tuned (BioMistral 7B + Faster-Whisper)',
+    'Local: Compact (Qwen 2.5 1.5b + Whisper Base)',
+    'Lab server: vLLM (port 8000)',
+    'Custom endpoint',
   ];
 
   @override
@@ -52,44 +52,44 @@ class _SettingsViewState extends State<SettingsView> {
     final model = _llmModelController.text;
 
     if (url.contains('pollinations.ai')) {
-      _selectedPreset = '⚡ Zero-Setup Instant Open AI (Default — Just Install & Use)';
+      _selectedPreset = 'Built-in demo (no endpoint configuration)';
     } else if (url == 'demo' || ConfigService().isDemoMode) {
-      _selectedPreset = '📴 100% Offline Built-In Engine (Air-Gapped / No Internet)';
+      _selectedPreset = 'Offline demo responses (no network calls)';
     } else if (url.contains('api.groq.com')) {
-      _selectedPreset = '☁️ Cloud: Groq Fast Tier (Whisper Large-v3 + Llama 3.3)';
+      _selectedPreset = 'Cloud: Groq (Whisper Large-v3 + Llama 3.3)';
     } else if (url.contains('api.openai.com')) {
-      _selectedPreset = '☁️ Cloud: OpenAI (Whisper-1 + GPT-4o-mini)';
+      _selectedPreset = 'Cloud: OpenAI (Whisper-1 + GPT-4o-mini)';
     } else if (model.contains('biomistral')) {
-      _selectedPreset = '💻 Local PC: Biomedical Specialist (BioMistral 7B + Faster-Whisper)';
+      _selectedPreset = 'Local: Biomedical-tuned (BioMistral 7B + Faster-Whisper)';
     } else if (url.contains('localhost:11434') && model.contains('1.5b')) {
-      _selectedPreset = '💻 Local PC: Ultra-Compact (Qwen 2.5 1.5B + Whisper Base)';
+      _selectedPreset = 'Local: Compact (Qwen 2.5 1.5b + Whisper Base)';
     } else if (url.contains('localhost:11434')) {
-      _selectedPreset = '💻 Local PC: Balanced (Qwen 2.5 7B + Faster-Whisper)';
+      _selectedPreset = 'Local: Balanced (Qwen 2.5 7B + Faster-Whisper)';
     } else if (url.contains(':8000')) {
-      _selectedPreset = '🔬 Lab Server: vLLM High-Throughput (Port 8000)';
+      _selectedPreset = 'Lab server: vLLM (port 8000)';
     } else {
-      _selectedPreset = '⚙️ Custom Endpoint';
+      _selectedPreset = 'Custom endpoint';
     }
   }
 
   void _applyPreset(String preset) {
     setState(() {
       _selectedPreset = preset;
-      if (preset.startsWith('⚡ Zero-Setup')) {
+      if (preset.startsWith('Built-in demo')) {
         _baseUrlController.text = 'https://text.pollinations.ai/openai';
         _apiKeyController.clear();
         _llmModelController.text = 'openai-fast';
         _transcriptionBaseUrlController.text = 'demo';
         _transcriptionApiKeyController.clear();
         _transcriptionModelController.text = 'built-in-whisper';
-      } else if (preset.startsWith('📴 100% Offline')) {
+      } else if (preset.startsWith('Offline demo')) {
         _baseUrlController.text = 'demo';
         _apiKeyController.text = 'demo';
         _llmModelController.text = 'built-in-scientific-ai';
         _transcriptionBaseUrlController.text = 'demo';
         _transcriptionApiKeyController.text = 'demo';
         _transcriptionModelController.text = 'built-in-whisper';
-      } else if (preset.contains('Groq Fast Tier') || preset.contains('Groq Free Tier')) {
+      } else if (preset.contains('Groq')) {
         _baseUrlController.text = 'https://api.groq.com/openai/v1';
         _apiKeyController.clear();
         _llmModelController.text = 'llama-3.3-70b-versatile';
@@ -110,14 +110,14 @@ class _SettingsViewState extends State<SettingsView> {
         _transcriptionBaseUrlController.text = 'http://localhost:8000/v1';
         _transcriptionApiKeyController.text = '';
         _transcriptionModelController.text = 'whisper-large-v3-turbo';
-      } else if (preset.contains('Biomedical Specialist')) {
+      } else if (preset.contains('Biomedical-tuned')) {
         _baseUrlController.text = 'http://localhost:11434/v1';
         _apiKeyController.text = 'ollama';
         _llmModelController.text = 'biomistral:7b';
         _transcriptionBaseUrlController.text = 'http://localhost:8000/v1';
         _transcriptionApiKeyController.text = '';
         _transcriptionModelController.text = 'whisper-large-v3-turbo';
-      } else if (preset.contains('Ultra-Compact')) {
+      } else if (preset.contains('Compact (Qwen')) {
         _baseUrlController.text = 'http://localhost:11434/v1';
         _apiKeyController.text = 'ollama';
         _llmModelController.text = 'qwen2.5:1.5b';
@@ -137,7 +137,7 @@ class _SettingsViewState extends State<SettingsView> {
 
   Future<void> _saveConfig() async {
     if (_formKey.currentState!.validate()) {
-      final isDemo = _selectedPreset.startsWith('📴 100% Offline') || _baseUrlController.text == 'demo';
+      final isDemo = _selectedPreset.startsWith('Offline demo') || _selectedPreset.startsWith('Built-in demo') || _baseUrlController.text == 'demo';
       await ConfigService().saveConfig(
         openAiBaseUrl: _baseUrlController.text,
         openAiApiKey: _apiKeyController.text,
@@ -157,11 +157,11 @@ class _SettingsViewState extends State<SettingsView> {
   }
 
   Future<void> _testConnection() async {
-    if (_baseUrlController.text == 'demo' || _selectedPreset.startsWith('⚡ Zero-Setup')) {
+    if (_baseUrlController.text == 'demo' || _selectedPreset.startsWith('Built-in demo') || _selectedPreset.startsWith('Offline demo')) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('⚡ Zero-Setup Instant AI active! Ready to record and analyze immediately.'),
+            content: Text('Demo mode active. No endpoint calls will be made.'),
             backgroundColor: Colors.teal,
           ),
         );
@@ -181,14 +181,14 @@ class _SettingsViewState extends State<SettingsView> {
       );
       if (response.statusCode == 200 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('LLM Endpoint Connection Successful!')),
+          const SnackBar(content: Text('Endpoint responded successfully.')),
         );
       }
     } catch (e) {
       if (mounted) {
         String hint = '';
         if (_baseUrlController.text.contains('localhost')) {
-          hint = '\n(Tip: No server listening on localhost. Start Ollama or choose "Cloud: Groq Free Tier" or "Offline Demo" above.)';
+          hint = '\n(Tip: No server listening on localhost. Start Ollama or select a cloud/demo preset above.)';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -225,12 +225,12 @@ class _SettingsViewState extends State<SettingsView> {
           padding: const EdgeInsets.all(20.0),
           children: [
             const Text(
-              'Select Inference Architecture & Model Tier',
+              'Endpoint presets',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const SizedBox(height: 6),
             const Text(
-              'Choose between local private offline engines (Ollama / vLLM) or high-speed cloud APIs.',
+              'Choose a self-hosted endpoint (Ollama / vLLM), a cloud API, or the built-in demo.';
               style: TextStyle(color: Colors.grey, fontSize: 13),
             ),
             const SizedBox(height: 14),
@@ -246,11 +246,11 @@ class _SettingsViewState extends State<SettingsView> {
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Zero-Setup Quick Start:\n'
-                        '• Zero-Setup Instant Open AI: Just install and use — works right out of the box with open models (no login, no API key, no CLI).\n'
-                        '• 100% Offline Built-In: Air-gapped pure on-device biomedical intelligence without internet.\n'
-                        '• Groq Fast Tier / OpenAI: Connect live cloud keys if desired.\n'
-                        '• Local PC (Ollama): For private air-gapped lab servers.',
+                        'Getting started:\n'
+                        '• Built-in demo: Try the built-in demo without configuring endpoints.\n'
+                        '• Offline demo: Built-in demo responses without network calls.\n'
+                        '• Groq / OpenAI: connect API keys if needed.\n'
+                        '• Local Ollama/vLLM: for self-hosted endpoints.',
                         style: TextStyle(fontSize: 12.5, height: 1.4),
                       ),
                     ),
@@ -273,7 +273,7 @@ class _SettingsViewState extends State<SettingsView> {
               },
             ),
             const SizedBox(height: 24),
-            const Text('LLM Reasoning Engine (Hypotheses, Summaries & Tasks)', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('LLM endpoint (summaries, tasks, Q&A)', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             TextFormField(
               controller: _baseUrlController,
@@ -304,7 +304,7 @@ class _SettingsViewState extends State<SettingsView> {
               validator: (value) => value!.isEmpty ? 'Required' : null,
             ),
             const SizedBox(height: 24),
-            const Text('Speech-To-Text Engine (Whisper & Audio Transcripts)', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Transcription endpoint', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             TextFormField(
               controller: _transcriptionBaseUrlController,
@@ -325,7 +325,7 @@ class _SettingsViewState extends State<SettingsView> {
               validator: (value) => value!.isEmpty ? 'Required' : null,
             ),
             const SizedBox(height: 24),
-            const Text('Linguistic & Translation Engine', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Translation endpoint', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             TextFormField(
               controller: _translateUrlController,

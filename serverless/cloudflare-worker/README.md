@@ -1,6 +1,6 @@
 # LabScribe AI Serverless Gateway (Cloudflare Workers AI)
 
-A 100% free serverless AI proxy that delivers the **"Journable" zero-setup experience** for LabScribe AI users.
+A serverless AI proxy for trying demo responses without endpoint setup for LabScribe AI users.
 
 ### Features
 - **Zero API keys required by end users**: The app connects directly to your Worker.
@@ -8,7 +8,7 @@ A 100% free serverless AI proxy that delivers the **"Journable" zero-setup exper
 - **Powered by Open Models**:
   - **Speech-to-Text**: `@cf/openai/whisper`
   - **Reasoning LLM**: `@cf/meta/llama-3.1-8b-instruct` (or `@cf/meta/llama-3.3-70b-instruct-fp8-fast`)
-- **100% Free**: Uses Cloudflare Workers AI free tier (10,000 neurons / day, no credit card required).
+- **Free tier**: Uses Cloudflare Workers AI free tier (10,000 neurons / day, no credit card required).
 
 ---
 
@@ -47,4 +47,4 @@ In the LabScribe Flutter app (or set as the app's default in `ConfigService`):
 - **Transcription Base URL**: `https://labscribe-ai-gateway.<your-subdomain>.workers.dev/v1`
 - **API Key**: Leave blank (not needed!)
 
-Now any user who downloads your Android APK or Desktop app gets instant Whisper audio transcription and Llama 3.1 analysis with **zero setup and zero login**!
+Now any user who downloads your Android APK or Desktop app gets instant Whisper audio transcription and Llama 3.1 analysis without additional setup in the app.

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
@@ -69,19 +70,19 @@ class MeetingIntelligenceService {
       _config.transcriptionBaseUrl == 'demo' ||
       (_config.transcriptionApiKey.isEmpty && _config.transcriptionBaseUrl.contains('openai.com'));
 
-  /// Check whether LLM intelligence is in 100% offline simulation mode
+  /// Check whether LLM intelligence uses the built-in demo response
   bool get isLlmDemoMode =>
       _config.isDemoMode ||
       _config.openAiBaseUrl == 'demo' ||
       (_config.openAiApiKey.isEmpty && _config.openAiBaseUrl.contains('openai.com'));
 
-  /// General flag for UI badges indicating effortless zero-setup out of the box
+  /// True when the app uses built-in demo responses instead of configured endpoints
   bool get isDemoMode =>
       isTranscriptionDemoMode ||
       isLlmDemoMode ||
       _config.openAiBaseUrl.contains('pollinations.ai');
 
-  /// Client-side HIPAA Safe Harbor & clinical de-identification
+  /// Optional pattern-based redaction helper
   ({String scrubbedText, int redactedCount, Map<String, int> breakdown}) deidentifyText(String rawText) {
     return _phiScrubber.scrubTranscript(rawText);
   }
@@ -100,7 +101,7 @@ class MeetingIntelligenceService {
 
     // If running in demo mode or unconfigured Whisper, use built-in biomedical transcription simulator
     if (isTranscriptionDemoMode) {
-      onProgress?.call('Processing with biomedical Whisper conditioning (Zero-Setup Instant Mode)...');
+      onProgress?.call('Processing with demo transcription...');
       await Future.delayed(const Duration(milliseconds: 1200));
       return _generateMockScientificTranscript();
     }
@@ -165,8 +166,8 @@ class MeetingIntelligenceService {
         );
       }
     } catch (e) {
-      // Automatic graceful fallback ensuring zero-setup instant operation like Play Store consumer apps
-      onProgress?.call('Operating in Zero-Setup Mode (Built-in Scientific Engine)...');
+      // Fallback to built-in demo transcript when the endpoint is unavailable
+      onProgress?.call('Endpoint unavailable; using built-in demo transcript...');
       await Future.delayed(const Duration(milliseconds: 600));
       return _generateMockScientificTranscript();
     }
@@ -374,7 +375,7 @@ $effectiveContext
       speakerTurns: speakerTurns,
     );
     } catch (e) {
-      // Automatic graceful fallback ensuring zero-setup instant operation
+      // Fallback to built-in demo synthesis when the endpoint is unavailable
       return _generateMockScientificIntelligence(transcript);
     }
   }
@@ -591,7 +592,7 @@ Keep the summary under 350 words while retaining all specific gene names, drug d
         return response.data['choices'][0]['message']['content'] ?? sectionText;
       }
     } catch (e) {
-      print('[MeetingIntelligenceService] Error in section synthesis: $e');
+      debugPrint('[MeetingIntelligenceService] section synthesis failed: $e');
     }
     return sectionText;
   }

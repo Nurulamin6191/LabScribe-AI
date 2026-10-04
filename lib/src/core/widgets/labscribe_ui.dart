@@ -86,7 +86,7 @@ class LabCard extends StatelessWidget {
   }
 }
 
-/// Small tinted pill for HIPAA / 21 CFR / Virtual / counts.
+/// Small tinted pill for status metadata and counts.
 class StatusPill extends StatelessWidget {
   final IconData icon;
   final String label;

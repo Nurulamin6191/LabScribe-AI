@@ -4,7 +4,7 @@ import '../../../models/meeting_session.dart';
 import '../../../core/widgets/labscribe_ui.dart';
 
 /// Historical session browser with real-time scientific search,
-/// metadata badges (HIPAA, 21 CFR Part 11 cryptographic seal, citations),
+/// metadata badges (redaction flag, SHA-256 reference, citations),
 /// and swipe-to-delete.
 class HistoryView extends StatefulWidget {
   const HistoryView({super.key});
@@ -108,7 +108,7 @@ class _HistoryViewState extends State<HistoryView> {
                   title: _searchController.text.isNotEmpty
                       ? 'No matches for "${_searchController.text}"'
                       : 'Archive is empty',
-                  body: 'Saved sessions appear here with HIPAA and 21 CFR seals, citations and speaker turns.',
+                  body: 'Saved sessions appear here with reference hashes, citations, and speaker turns.',
                 )
               : ListView.separated(
                   padding: const EdgeInsets.all(16),
@@ -198,7 +198,7 @@ class _HistoryViewState extends State<HistoryView> {
                                 if (session.isDeIdentified)
                                   StatusPill(icon: Icons.shield_outlined, label: 'HIPAA', color: theme.colorScheme.primary),
                                 if (session.audioSha256 != null)
-                                  StatusPill(icon: Icons.verified_outlined, label: '21 CFR 11', color: theme.colorScheme.secondary),
+                                  StatusPill(icon: Icons.verified_outlined, label: 'SHA-256', color: theme.colorScheme.secondary),
                                 if (session.citations.isNotEmpty)
                                   StatusPill(icon: Icons.library_books_outlined, label: '${session.citations.length} papers', color: theme.colorScheme.secondary),
                                 if (session.speakerTurns.isNotEmpty)

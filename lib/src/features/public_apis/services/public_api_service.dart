@@ -3,8 +3,7 @@ import 'package:dio/dio.dart';
 import '../../../models/meeting_session.dart';
 
 /// Service managing scientific vocabulary, chemical lookups, and literature resolution.
-/// Features a built-in offline Biomedical Atlas ensuring 100% self-reliant, zero-network operation,
-/// with online cascade to NIH PubChem and NCBI PubMed E-Utilities when connected.
+/// Uses a local term atlas first, then PubChem and PubMed endpoints when network access is available.
 class PublicApiService {
   final Dio _dio;
   final String libreTranslateBaseUrl;
@@ -22,7 +21,7 @@ class PublicApiService {
 
   // ─────────────────────────────────────────────────────────────
   //  0. Built-in Offline Biomedical & Chemical Atlas
-  //     Zero internet required — 100% self-reliant offline engine
+  //     Local atlas lookup; no network call
   // ─────────────────────────────────────────────────────────────
   static final Map<String, ({String definition, String partOfSpeech, String phonetic, String source})>
       _offlineBiomedicalAtlas = {
@@ -222,7 +221,7 @@ class PublicApiService {
   Future<GlossaryTerm?> lookupScientificTerm(String term) async {
     final cleanKey = term.trim().toLowerCase();
 
-    // Priority 1: Instant zero-latency offline atlas (no browser or internet needed)
+    // Priority 1: Local atlas lookup
     if (_offlineBiomedicalAtlas.containsKey(cleanKey)) {
       final entry = _offlineBiomedicalAtlas[cleanKey]!;
       return GlossaryTerm(
@@ -254,14 +253,24 @@ class PublicApiService {
   }
 
   Future<List<GlossaryTerm>> lookupBatchWords(List<String> keywords) async {
-    final List<GlossaryTerm> results = [];
-    for (final kw in keywords.take(10)) {
-      final term = await lookupScientificTerm(kw);
-      if (term != null) {
-        results.add(term);
-      }
+    // Deduplicate and cap to avoid redundant network calls.
+    final seen = <String>{};
+    final unique = <String>[];
+    for (final kw in keywords) {
+      final key = kw.trim().toLowerCase();
+      if (key.isNotEmpty && seen.add(key)) unique.add(kw);
+      if (unique.length >= 10) break;
     }
-    return results;
+    // Local atlas hits resolve synchronously; only misses hit the network.
+    // Run misses concurrently with isolated error handling.
+    final results = await Future.wait(unique.map((kw) async {
+      try {
+        return await lookupScientificTerm(kw);
+      } catch (_) {
+        return null;
+      }
+    }));
+    return results.whereType<GlossaryTerm>().toList();
   }
 
   // ─────────────────────────────────────────────────────────────

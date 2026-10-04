@@ -4,8 +4,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../models/meeting_session.dart';
 
-/// Scientific Research Exporter supporting:
-/// 1. Comprehensive Lab Notebook Markdown (with 21 CFR Part 11 SHA-256 audit trail)
+/// Exports session data to common file formats:
+/// 1. Lab notebook Markdown (with SHA-256 references)
 /// 2. Benchling / LabArchives ELN-compliant JSON format
 /// 3. BibTeX bibliography export (.bib) for Zotero, Mendeley, and Overleaf/LaTeX
 /// 4. In-App markdown generation for clipboard and internal viewer
@@ -17,16 +17,16 @@ class ExportService {
     buffer.writeln('**Date:** ${session.createdAt.toLocal().toString().split('.')[0]}');
     buffer.writeln('**Duration:** ${(session.durationSeconds / 60).toStringAsFixed(1)} minutes');
     if (session.isDeIdentified) {
-      buffer.writeln('**Clinical Privacy:** HIPAA Safe Harbor De-Identified');
+      buffer.writeln('**Redaction helper:** pattern-based masking was enabled (review recommended)');
     }
     if (session.isVirtualCall) {
       buffer.writeln('**Session Source:** Virtual Call Audio (Zoom / WhatsApp / Teams)');
     }
 
-    // 21 CFR Part 11 Cryptographic Audit Trail
-    buffer.writeln('\n### Cryptographic Audit Trail (21 CFR Part 11)');
-    buffer.writeln('- **Audio SHA-256 Seal:** `${session.audioSha256 ?? "Pending"}`');
-    buffer.writeln('- **Transcript SHA-256 Seal:** `${session.transcriptSha256 ?? "Pending"}`');
+    // SHA-256 references
+    buffer.writeln('\n### Integrity references');
+    buffer.writeln('- **Audio SHA-256:** `${session.audioSha256 ?? "Pending"}`');
+    buffer.writeln('- **Transcript SHA-256:** `${session.transcriptSha256 ?? "Pending"}`');
 
     if (session.summary != null && session.summary!.scientificHypothesis.isNotEmpty) {
       buffer.writeln('\n## Research Hypothesis / Rationale');

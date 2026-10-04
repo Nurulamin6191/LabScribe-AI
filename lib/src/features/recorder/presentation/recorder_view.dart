@@ -23,7 +23,7 @@ import '../../public_apis/services/public_api_service.dart';
 
 /// Main interactive UI managing session recording, audio device selection,
 /// meeting-compatible compact mode, clinical de-identification, in-app literature/figure reading,
-/// 21 CFR Part 11 cryptographic verification, and responsive scientific intelligence dashboards.
+/// SHA-256 reference hashes, and responsive intelligence dashboards.
 class RecorderView extends StatefulWidget {
   final MeetingIntelligenceService intelligenceService;
   final PublicApiService publicApiService;
@@ -220,7 +220,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           _recordingState = RecordingState.recording;
           _recordedAudioPath = filePath;
           _recordDurationSeconds = 0;
-          _statusMessage = 'Recording scientific discourse (Low-CPU AAC-LC)...';
+          _statusMessage = 'Recording...';
           
           _currentSession = MeetingSession(
             id: timestamp.toString(),
@@ -281,7 +281,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       setState(() {
         _recordingState = RecordingState.stopped;
         _recordedAudioPath = path ?? _recordedAudioPath;
-        _statusMessage = 'Recording saved locally (SHA-256 sealed). Ready for AI processing.';
+        _statusMessage = 'Recording saved on-device with a SHA-256 reference. Ready for analysis.';
         
         if (_currentSession != null) {
           _currentSession!.audioPath = _recordedAudioPath;
@@ -339,11 +339,11 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           _recordedAudioPath = selectedPath;
           _recordingState = RecordingState.stopped;
           _isVirtualCallMode = isCall;
-          _statusMessage = 'Imported: $fileName (SHA-256 sealed). Ready for AI processing.';
+          _statusMessage = 'Imported: $fileName (SHA-256 recorded). Ready for analysis.';
         });
 
         await SessionRepository().saveSession(newSession);
-        _showSnackBar('Imported $fileName with 21 CFR Part 11 cryptographic seal.');
+        _showSnackBar('Imported $fileName with a SHA-256 reference.');
       }
     } catch (e) {
       _showSnackBar('Error importing audio file: $e');
@@ -359,12 +359,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     });
   }
 
-  String _formatDuration(int seconds) {
-    final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
-    final secs = (seconds % 60).toString().padLeft(2, '0');
-    final hours = (seconds ~/ 3600).toString().padLeft(2, '0');
-    return '$hours:$minutes:$secs';
-  }
+  String _formatDuration(int seconds) => formatHMS(seconds);
 
   // --- In-Meeting One-Tap Tagging & Bookmarks (Meeting Compatibility) ---
 
@@ -563,7 +558,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  // --- In-App Self-Reliant Feature Dialogs ---
+  // --- In-app article and figure dialogs ---
 
   /// In-App Article / Abstract Reader (Zero External Browser Needed)
   void _showArticleReader(PubMedCitation cite) {
@@ -859,7 +854,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     }
   }
 
-  // --- AI Processing Engine with 21 CFR Part 11 Hash Computation ---
+  // --- AI processing with SHA-256 reference computation ---
 
   Future<void> _executeAiPipeline() async {
     if (_recordedAudioPath == null && _currentSession?.audioPath == null) {
@@ -870,7 +865,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     try {
       setState(() {
         _processingStage = ProcessingStage.transcribing;
-        _statusMessage = 'Stage 1/4: Transcribing audio with biomedical Whisper conditioning...';
+        _statusMessage = 'Step 1: Transcribing audio...';
       });
 
       // 1. Transcription (handles automatic chunking if > 24 MB)
@@ -893,7 +888,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       if (_enableClinicalDeIdentification) {
         setState(() {
           _processingStage = ProcessingStage.deidentifying;
-          _statusMessage = 'Stage 2/4: Scrubbing Protected Health Information (HIPAA Safe Harbor)...';
+          _statusMessage = 'Step 2: Applying optional pattern-based redaction...';
         });
 
         final scrubResult = widget.intelligenceService.deidentifyText(transcript);
@@ -908,7 +903,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         _translatedTranscript = null;
         _showTranslatedTranscript = false;
         _processingStage = ProcessingStage.summarizing;
-        _statusMessage = 'Stage 3/4: Synthesizing hypotheses, PubChem compounds & PubMed citations...';
+        _statusMessage = 'Step 3: Synthesizing summary, tasks, and references...';
       });
 
       // 3. Multi-source scientific intelligence synthesis
@@ -917,12 +912,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         sessionTitle: _currentSession?.title ?? 'Scientific Session',
       );
 
-      // 4. Compute 21 CFR Part 11 cryptographic transcript hash
+      // 4. Compute transcript SHA-256 reference
       final transcriptHash = CryptoUtils.sha256String(transcript);
 
       setState(() {
         _processingStage = ProcessingStage.completed;
-        _statusMessage = 'AI Scientific Intelligence Generated & Sealed!';
+        _statusMessage = 'Analysis complete.';
         _currentSession?.summary = intelligence.summary;
         _currentSession?.actionItems = intelligence.actionItems;
         _currentSession?.glossaryTerms = intelligence.glossary;
@@ -935,7 +930,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         await SessionRepository().saveSession(_currentSession!);
       }
 
-      _showSnackBar('Scientific Analysis & Citation Resolution complete (21 CFR Part 11 sealed).');
+      _showSnackBar('Analysis complete. References resolved where available.');
     } catch (e) {
       setState(() {
         _processingStage = ProcessingStage.error;
@@ -994,7 +989,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
       setState(() {
         _processingStage = ProcessingStage.completed;
-        _statusMessage = 'AI Intelligence Generated & Sealed!';
+        _statusMessage = 'Analysis complete.';
         _currentSession?.summary = intelligence.summary;
         _currentSession?.actionItems = intelligence.actionItems;
         _currentSession?.glossaryTerms = intelligence.glossary;
@@ -1007,7 +1002,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       });
 
       await SessionRepository().saveSession(_currentSession!);
-      _showSnackBar('Analysis complete from text (21 CFR Part 11 sealed).');
+      _showSnackBar('Analysis complete from text.');
     } catch (e) {
       setState(() {
         _processingStage = ProcessingStage.error;
@@ -1070,7 +1065,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             ListTile(
               leading: const Icon(Icons.article, color: Colors.deepPurple),
               title: const Text('Save as Lab Markdown (.md)'),
-              subtitle: const Text('Formatted lab record with 21 CFR Part 11 cryptographic seal'),
+              subtitle: const Text('Formatted lab record with SHA-256 references'),
               onTap: () async {
                 Navigator.pop(ctx);
                 await ExportService().exportSessionAsMarkdown(_currentSession!);
@@ -1126,7 +1121,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _showTranslatedTranscript = false;
     });
     await SessionRepository().saveSession(_currentSession!);
-    _showSnackBar('Transcript updated and 21 CFR Part 11 re-sealed!');
+    _showSnackBar('Transcript updated and hash refreshed.');
   }
 
   Future<void> _toggleTranslateTranscript() async {
@@ -1630,10 +1625,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               Padding(
                 padding: const EdgeInsets.only(right: 4),
                 child: Tooltip(
-                  message: 'Zero-Setup Mode: Instant AI running out-of-the-box.',
+                  message: 'Demo mode: built-in responses without configured endpoints.',
                   child: StatusPill(
                     icon: Icons.bolt,
-                    label: 'Zero-Setup AI',
+                    label: 'Demo mode',
                     color: theme.colorScheme.tertiary,
                   ),
                 ),
@@ -1643,7 +1638,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 padding: const EdgeInsets.only(right: 4),
                 child: StatusPill(
                   icon: Icons.shield,
-                  label: 'HIPAA ${_redactedTokensCount > 0 ? _redactedTokensCount : ""}'.trim(),
+                  label: 'Redaction ${_redactedTokensCount > 0 ? _redactedTokensCount : ""}'.trim(),
                   color: theme.colorScheme.primary,
                 ),
               ),
@@ -2146,7 +2141,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Default System Microphone', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700), overflow: TextOverflow.ellipsis),
-                      Text('Air-gapped local input', style: TextStyle(fontSize: 10.5, color: Colors.grey)),
+                      Text('On-device local input', style: TextStyle(fontSize: 10.5, color: Colors.grey)),
                     ],
                   )
                 : DropdownButtonHideUnderline(
@@ -2193,7 +2188,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         ? const Color(0xFFD92D20)
         : (isPaused ? Colors.orange : Colors.grey);
     final status = isRec
-        ? 'RECORDING · AIR-GAPPED MIC'
+        ? 'RECORDING'
         : _recordingState.name.toUpperCase();
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 20, vertical: large ? 18 : 14),
@@ -2310,7 +2305,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             child: FilledButton.icon(
               onPressed: _stopRecording,
               icon: const Icon(Icons.stop, size: 16),
-              label: const Text('Stop & Seal'),
+              label: const Text('Stop'),
               style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.onSurface),
             ),
           ),
@@ -2508,7 +2503,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 icon: Icons.shield_outlined,
                 iconColor: theme.colorScheme.tertiary,
                 title: 'PHI scrubber',
-                subtitle: 'HIPAA Safe Harbor on-device',
+                subtitle: 'Redaction Safe Harbor on-device',
                 trailing: Switch(value: _enableClinicalDeIdentification, onChanged: (v) => setState(() => _enableClinicalDeIdentification = v)),
               ),
               const Divider(height: 8),
@@ -2562,7 +2557,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         ),
         if (_recordedAudioPath != null) ...[
           const SizedBox(height: 10),
-          Text('Air-gapped cache · ${_recordedAudioPath!.split(RegExp(r"[/\\\\]")).last}', style: TextStyle(fontSize: 10, color: theme.colorScheme.outline, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+          Text('On-device cache · ${_recordedAudioPath!.split(RegExp(r"[/\\\\]")).last}', style: TextStyle(fontSize: 10, color: theme.colorScheme.outline, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
         ],
         const SizedBox(height: 8),
       ],
@@ -2570,18 +2565,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   // --- Intelligence Tab: Full Transcript & Multilingual Editor ---
-
-  Widget _pageWrap(ThemeData theme, Widget child, {double maxWidth = 880}) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxWidth),
-          child: child,
-        ),
-      ),
-    );
-  }
 
   Widget _buildTranscriptTab(ThemeData theme) {
     final transcript = _currentSession?.transcript ?? '';
@@ -2627,7 +2610,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                           children: [
                             StatusPill(icon: Icons.text_snippet_outlined, label: '$wordCount words · ~$estimatedMin min', color: theme.colorScheme.primary),
                             if (_currentSession?.transcriptSha256 != null)
-                              StatusPill(icon: Icons.verified_outlined, label: 'Sealed ${_currentSession!.transcriptSha256!.substring(0, 8)}', color: theme.colorScheme.secondary),
+                              StatusPill(icon: Icons.verified_outlined, label: 'Ref ${_currentSession!.transcriptSha256!.substring(0, 8)}', color: theme.colorScheme.secondary),
                             if (_showTranslatedTranscript) StatusPill(icon: Icons.translate, label: 'Hindi view', color: theme.colorScheme.tertiary),
                           ],
                         ),
@@ -2696,7 +2679,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         spacing: 8,
                         children: [
                           TextButton(onPressed: () => setState(() => _isTranscriptEditMode = false), child: const Text('Cancel')),
-                          FilledButton.tonalIcon(onPressed: _saveEditedTranscript, icon: const Icon(Icons.check, size: 15), label: const Text('Save & re-seal')),
+                          FilledButton.tonalIcon(onPressed: _saveEditedTranscript, icon: const Icon(Icons.check, size: 15), label: const Text('Save & update hash')),
                           FilledButton.icon(onPressed: () => _processTextDirectly(_transcriptEditController.text), icon: const Icon(Icons.auto_awesome, size: 15), label: const Text('Run AI analysis')),
                         ],
                       ),
@@ -2778,7 +2761,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         children: [
                           Icon(Icons.verified, size: 15, color: theme.colorScheme.secondary),
                           const SizedBox(width: 6),
-                          Text('21 CFR PART 11 · FORENSIC SEAL', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5, letterSpacing: 1.0, color: theme.colorScheme.secondary)),
+                          Text('INTEGRITY REFERENCES', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5, letterSpacing: 1.0, color: theme.colorScheme.secondary)),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -3176,7 +3159,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'LabScribe AI is 100% air-gapped and local. No external bots join your video calls. Here is how to capture calls privately:',
+                'LabScribe stores recordings and notes on-device. Here is how to capture call audio for import:',
                 style: TextStyle(fontSize: 13),
               ),
               SizedBox(height: 16),
@@ -3335,7 +3318,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  // --- Intelligence Tab 4: Bio/Chem Glossary & Self-Reliant Search ---
+  // --- Glossary tab ---
 
   Widget _searchBar(ThemeData theme, TextEditingController controller, String hint, bool loading, VoidCallback onSearch, VoidCallback onClear) {
     return Container(
@@ -3446,7 +3429,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  // --- Intelligence Tab 4: Literature & Self-Reliant PubMed Reader ---
+  // --- Citations tab ---
 
   Widget _buildCitationsTab(ThemeData theme) {
     final rawCitations = _currentSession?.citations ?? [];

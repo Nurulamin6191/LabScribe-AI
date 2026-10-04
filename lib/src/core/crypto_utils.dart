@@ -2,9 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-/// Pure-Dart zero-dependency SHA-256 Cryptographic Engine.
-/// Provides immutable, tamper-evident verification for 21 CFR Part 11,
-/// GLP/GMP laboratory records, and patent dispute defense.
+/// Pure-Dart SHA-256 helper.
+/// Stores hash references alongside audio and transcript text for later comparison.
 class CryptoUtils {
   static const List<int> _k = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -104,10 +103,17 @@ class CryptoUtils {
     return sha256Bytes(Uint8List.fromList(utf8.encode(input)));
   }
 
-  /// Compute SHA-256 hash from an audio or document file
+  /// Compute SHA-256 hash from an audio or document file.
+  /// Reads the file in one pass; callers should avoid hashing files that
+  /// exceed available memory and prefer chunked uploads instead.
   static Future<String> sha256File(File file) async {
-    if (!await file.exists()) return '';
-    final bytes = await file.readAsBytes();
-    return sha256Bytes(bytes);
+    try {
+      if (!await file.exists()) return '';
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) return '';
+      return sha256Bytes(bytes);
+    } catch (_) {
+      return '';
+    }
   }
 }

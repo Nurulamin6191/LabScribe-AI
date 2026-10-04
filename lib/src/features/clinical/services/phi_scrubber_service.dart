@@ -1,6 +1,6 @@
-/// Client-Side HIPAA & Clinical Protected Health Information (PHI) De-identification Engine.
-/// Runs 100% locally on-device before any transcript is displayed, saved, or dispatched.
-/// Complies with HIPAA Safe Harbor (45 CFR § 164.514(b)) and clinical trial anonymization standards.
+/// Pattern-based helper that masks common identifier formats in transcripts.
+/// Runs on-device before display and storage. Manual review is recommended;
+/// this is not a certification of de-identification.
 class PhiScrubberService {
   /// Redacts PHI from raw speech transcripts while strictly preserving
   /// medical/scientific nomenclature (e.g., tumor staging, gene mutations, drug doses).

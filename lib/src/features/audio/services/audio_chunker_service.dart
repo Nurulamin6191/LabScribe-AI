@@ -1,11 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
 
-/// Production-Grade Audio Segmentation Pipeline.
-/// Resolves the 25 MB payload limit (HTTP 413) enforced by Whisper and cloud APIs.
-/// Uses container-aware slicing (via native FFmpeg or RIFF/WAV header injection)
-/// to ensure every chunk is a 100% valid, decodable audio file.
+/// Audio segmentation for transcription payload limits.
+/// Uses FFmpeg when available, otherwise WAV header-preserving splits, to produce decodable chunks.
 class AudioChunkerService {
   /// Maximum payload threshold in bytes (24 MB to stay safely under 25 MB ceiling)
   final int maxChunkSizeBytes;
@@ -55,7 +54,7 @@ class AudioChunkerService {
           return chunks;
         }
       } catch (e) {
-        print('[AudioChunkerService] FFmpeg slicing error: $e, falling back to container parser');
+        debugPrint('[AudioChunkerService] FFmpeg slicing error: $e, falling back to container parser');
       }
     }
 
@@ -65,7 +64,7 @@ class AudioChunkerService {
     }
 
     // Strategy 3: Single-pass file if no container slicer available
-    print('[AudioChunkerService] Warning: Audio requires chunking but container format .$extension '
+    debugPrint('[AudioChunkerService] Warning: Audio requires chunking but container format .$extension '
         'requires FFmpeg. Returning original file.');
     return [sourcePath];
   }
