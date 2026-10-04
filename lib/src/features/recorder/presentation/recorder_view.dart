@@ -1849,8 +1849,11 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   Map<String, int> _talkSeconds() {
     final map = <String, int>{};
     for (final turn in _currentSession?.speakerTurns ?? []) {
-      final dur = (turn.endSeconds - turn.startSeconds).clamp(0, 6 * 3600).toInt();
-      map[turn.speakerName] = (map[turn.speakerName] ?? 0) + dur;
+      int dur = turn.endSeconds - turn.startSeconds;
+      if (dur < 0) dur = 0;
+      if (dur > 6 * 3600) dur = 6 * 3600;
+      final prev = map[turn.speakerName] ?? 0;
+      map[turn.speakerName] = prev + dur;
     }
     return map;
   }
