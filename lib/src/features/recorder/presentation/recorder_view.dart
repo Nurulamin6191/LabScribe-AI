@@ -14,6 +14,7 @@ import '../../../core/session_repository.dart';
 import '../../../core/crypto_utils.dart';
 import '../../../core/config_service.dart';
 import '../../../core/widgets/labscribe_ui.dart';
+import '../../../core/workflow/session_workflow.dart';
 import '../../settings/presentation/settings_view.dart';
 import '../../export/services/export_service.dart';
 import '../../history/presentation/history_view.dart';
@@ -91,6 +92,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   bool? _sttOk; // endpoint reachability probe results (null = not tested)
   bool? _llmOk;
   bool _testingEndpoints = false;
+  final Set<String> _exportedIds = {}; // sessions exported at least once (drives workflow stage)
   int _mobileNotesTab = 0; // 0 Overview, 1 Transcript
   int _mobileTasksTab = 0; // 0 Protocols, 1 Speakers
   bool _isWaitingForAiChatResponse = false;
@@ -171,6 +173,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     // (desktop Record destination is separate from the TabController)
     _tabController = TabController(length: 7, vsync: this);
     _tabController.addListener(_syncDeskFromTab);
+    _titleController.addListener(_onTitleChanged);
 
     // Enumerate connected microphones (Jabra, USB, AirPods, built-in)
     _loadAudioDevices();
@@ -188,6 +191,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     _pubmedSearchController.dispose();
     _transcriptEditController.dispose();
     _transcriptSearchController.dispose();
+    _titleController.removeListener(_onTitleChanged);
     _tabController.removeListener(_syncDeskFromTab);
     _tabController.dispose();
     super.dispose();
@@ -314,6 +318,15 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
       if (_currentSession != null) {
         await SessionRepository().saveSession(_currentSession!);
+      }
+
+      if ((_currentSession?.transcript.isEmpty ?? true) && _recordedAudioPath != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Recording saved. Next step: transcribe it.'),
+            action: SnackBarAction(label: 'Analyze', onPressed: () => _executeAiPipeline()),
+          ),
+        );
       }
     } catch (e) {
       _showSnackBar('Error stopping recorder: $e');
@@ -968,6 +981,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _showSnackBar(useDemoSample
           ? 'Sample analysis shown — configure an endpoint for real results.'
           : 'Analysis complete. References resolved where available.');
+      _goOverview();
     } catch (e) {
       setState(() {
         _processingStage = ProcessingStage.error;
@@ -1092,6 +1106,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               onTap: () async {
                 Navigator.pop(ctx);
                 await ExportService().exportTranscriptAsPlainText(_currentSession!);
+                _markExported();
                 _showSnackBar('Transcript saved as plain text (.txt)!');
               },
             ),
@@ -1102,6 +1117,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               onTap: () async {
                 Navigator.pop(ctx);
                 await ExportService().exportSessionAsMarkdown(_currentSession!);
+                _markExported();
                 _showSnackBar('Exported as scientific Markdown (.md)!');
               },
             ),
@@ -1887,6 +1903,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 } else if (value == 'bibtex') {
                   await ExportService().exportSessionAsBibTeX(_currentSession!);
                 }
+                _markExported();
               },
               itemBuilder: (context) => [
                 if (isCompactAction)
@@ -1977,6 +1994,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             : null,
       ),
     );
+  }
+
+  void _onTitleChanged() {
+    if (mounted) setState(() {});
   }
 
   void _syncDeskFromTab() {
@@ -2295,9 +2316,13 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         children: [
           wide ? _buildDesktopSidebar(context, theme) : _buildDesktopRail(theme),
           Expanded(
-            child: AnimatedBuilder(
-              animation: _tabController,
-              builder: (context, _) => _deskIndex == 0
+            child: Column(
+              children: [
+                _buildSessionHeader(theme),
+                Expanded(
+                  child: AnimatedBuilder(
+                    animation: _tabController,
+                    builder: (context, _) => _deskIndex == 0
                   ? SingleChildScrollView(
                       padding: const EdgeInsets.all(20),
                       child: Center(
@@ -2319,12 +2344,21 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         _buildChatTab(theme),
                       ],
                     ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       );
     }
 
+    Widget withHeader(Widget body) => Column(
+          children: [
+            _buildSessionHeader(theme),
+            Expanded(child: body),
+          ],
+        );
     switch (_mobileNavIndex) {
       case 0:
         return SingleChildScrollView(
@@ -2332,13 +2366,13 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           child: _buildRecordingControlPanel(theme),
         );
       case 1:
-        return _buildMobileNotes(theme);
+        return withHeader(_buildMobileNotes(theme));
       case 2:
-        return _buildMobileTasks(theme);
+        return withHeader(_buildMobileTasks(theme));
       case 3:
-        return _buildScienceMobile(theme);
+        return withHeader(_buildScienceMobile(theme));
       case 4:
-        return _buildChatTab(theme);
+        return withHeader(_buildChatTab(theme));
       default:
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -2734,6 +2768,328 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
+  SessionStage get _currentStage {
+    final s = _currentSession;
+    final audio = (_recordedAudioPath ?? s?.audioPath)?.isNotEmpty == true;
+    return SessionWorkflow.stageOf(
+      hasAudio: audio,
+      isRecording: _recordingState == RecordingState.recording,
+      hasTranscript: (s?.transcript.isNotEmpty ?? false),
+      hasSummary: s?.summary != null,
+      exported: s != null && _exportedIds.contains(s.id),
+    );
+  }
+
+  void _goRecord() {
+    setState(() => _isMeetingCompactMode = false);
+    if (MediaQuery.of(context).size.width >= 900) {
+      _selectDesk(0);
+    } else {
+      setState(() => _mobileNavIndex = 0);
+    }
+  }
+
+  void _goActions() {
+    if (MediaQuery.of(context).size.width >= 900) {
+      _selectDesk(3);
+    } else {
+      setState(() {
+        _mobileTasksTab = 0;
+        _mobileNavIndex = 2;
+      });
+    }
+  }
+
+  void _goOverview() {
+    if (MediaQuery.of(context).size.width >= 900) {
+      _selectDesk(1);
+    } else {
+      setState(() {
+        _mobileNotesTab = 0;
+        _mobileNavIndex = 1;
+      });
+    }
+  }
+
+  Future<void> _newSession() async {
+    if (_recordingState == RecordingState.recording) {
+      _showSnackBar('Stop the recording first.');
+      return;
+    }
+    try {
+      await _audioPlayer.stop();
+    } catch (_) {}
+    _timer?.cancel();
+    setState(() {
+      _currentSession = null;
+      _recordedAudioPath = null;
+      _recordDurationSeconds = 0;
+      _recordingState = RecordingState.idle;
+      _processingStage = ProcessingStage.idle;
+      _statusMessage = 'Ready to capture scientific session or lab seminar.';
+      _titleController.text = '';
+      _transcriptEditController.clear();
+      _chatController.clear();
+      _pubchemSearchController.clear();
+      _pubmedSearchController.clear();
+      _searchResultsPubChem.clear();
+      _searchResultsPubMed.clear();
+      _translatedTranscript = null;
+      _showTranslatedTranscript = false;
+      _translatedSummary = null;
+      _showTranslatedSummary = false;
+      _isTranscriptEditMode = false;
+      _transcriptQuery = '';
+      _transcriptSpeaker = null;
+      _taskFilter = 0;
+      _isDemoContent = false;
+      _isMeetingCompactMode = false;
+    });
+    _goRecord();
+  }
+
+  static const List<(String, String)> _sessionTemplates = [
+    ('Lab meeting', 'Weekly Lab Meeting'),
+    ('Tumor board', 'Tumor Board Review'),
+    ('Journal club', 'Journal Club Discussion'),
+    ('Seminar', 'Research Seminar'),
+    ('Thesis defense', 'Thesis Defense'),
+  ];
+
+  String _todaySuffix() {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final now = DateTime.now();
+    return '${months[now.month - 1]} ${now.day}';
+  }
+
+  void _applyTemplate(String label, String title) {
+    if (_recordingState == RecordingState.recording) {
+      _showSnackBar('Stop the recording before starting a templated session.');
+      return;
+    }
+    setState(() {
+      _titleController.text = '$title · ${_todaySuffix()}';
+    });
+    _showSnackBar('$label template applied.');
+  }
+
+  Widget _templatePicker(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionLabel('Session template'),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 7,
+          runSpacing: 7,
+          children: _sessionTemplates
+              .map((tpl) => ActionChip(
+                    label: Text(tpl.$1, style: const TextStyle(fontSize: 12)),
+                    avatar: const Icon(Icons.description_outlined, size: 14),
+                    onPressed: () => _applyTemplate(tpl.$1, tpl.$2),
+                    visualDensity: VisualDensity.compact,
+                  ))
+              .toList(),
+        ),
+      ],
+    );
+  }
+
+  /// Persistent session header: title, workflow stepper, and the single
+  /// primary Continue action for the current stage. Rendered above every
+  /// review tab (and the desktop deck) so the workflow never feels lost.
+  Widget _buildSessionHeader(ThemeData theme) {
+    final stage = _currentStage;
+    final title = _titleController.text.trim().isEmpty ? 'Untitled session' : _titleController.text.trim();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final narrow = constraints.maxWidth < 560;
+          final stepper = SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: StageStepper(current: stage),
+          );
+          final cont = _continueButton(theme, stage);
+          if (narrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15), overflow: TextOverflow.ellipsis),
+                          Text(SessionWorkflow.hint(stage), style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline)),
+                        ],
+                      ),
+                    ),
+                    IconButton(icon: const Icon(Icons.edit_outlined, size: 17), tooltip: 'Rename session', onPressed: _renameSessionDialog, visualDensity: VisualDensity.compact),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                stepper,
+                const SizedBox(height: 8),
+                cont,
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15), overflow: TextOverflow.ellipsis)),
+                        IconButton(icon: const Icon(Icons.edit_outlined, size: 16), tooltip: 'Rename session', onPressed: _renameSessionDialog, visualDensity: VisualDensity.compact),
+                      ],
+                    ),
+                    Text(SessionWorkflow.hint(stage), style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(child: stepper),
+              const SizedBox(width: 16),
+              cont,
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _continueButton(ThemeData theme, SessionStage stage) {
+    String label;
+    VoidCallback? action;
+    switch (stage) {
+      case SessionStage.capture:
+        if (_recordingState == RecordingState.recording) {
+          label = 'Recording…';
+          action = null;
+        } else {
+          label = _currentSession == null && _recordedAudioPath == null ? 'Start recording' : 'Go to recorder';
+          action = _goRecord;
+        }
+        break;
+      case SessionStage.transcribe:
+        label = 'Transcribe & analyze';
+        action = () => _executeAiPipeline();
+        break;
+      case SessionStage.synthesize:
+        label = 'Generate insights';
+        action = () => _executeAiPipeline();
+        break;
+      case SessionStage.review:
+        label = 'Review tasks';
+        action = _goActions;
+        break;
+      case SessionStage.export:
+        label = 'Export notes';
+        action = _exportQuick;
+        break;
+      case SessionStage.done:
+        label = 'New session';
+        action = _newSession;
+        break;
+    }
+    return FilledButton.icon(
+      onPressed: action,
+      icon: Icon(SessionWorkflow.icon(stage), size: 15),
+      label: Text(label, style: const TextStyle(fontSize: 12.5)),
+      style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+    );
+  }
+
+  Future<void> _renameSessionDialog() async {
+    final controller = TextEditingController(text: _titleController.text);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename session', style: TextStyle(fontSize: 17)),
+        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Session title')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (result != null && result.isNotEmpty) {
+      setState(() {
+        _titleController.text = result;
+        _currentSession?.title = result;
+      });
+      if (_currentSession != null) {
+        await SessionRepository().saveSession(_currentSession!);
+      }
+    }
+  }
+
+  void _markExported() {
+    final id = _currentSession?.id;
+    if (id != null && mounted) {
+      setState(() => _exportedIds.add(id));
+    }
+  }
+
+  /// Quick export sheet shared by the workflow Continue action.
+  Future<void> _exportQuick() async {
+    if (_currentSession == null) {
+      _showSnackBar('Nothing to export yet.');
+      return;
+    }
+    final session = _currentSession!;
+    await showModalBottomSheet(
+      context: context,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SectionLabel('Export session'),
+            const SizedBox(height: 10),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Lab notebook (.md)', style: TextStyle(fontSize: 13.5)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await ExportService().exportSessionAsMarkdown(session);
+                _markExported();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.integration_instructions_outlined),
+              title: const Text('Benchling ELN (.json)', style: TextStyle(fontSize: 13.5)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await ExportService().exportSessionAsELNJson(session);
+                _markExported();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.format_quote_outlined),
+              title: const Text('BibTeX citations (.bib)', style: TextStyle(fontSize: 13.5)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await ExportService().exportSessionAsBibTeX(session);
+                _markExported();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _endpointDot(ThemeData theme, bool? ok, String label) {
     final color = ok == null ? theme.colorScheme.outline : (ok ? Colors.green : theme.colorScheme.error);
     final text = ok == null ? '$label · untested' : (ok ? '$label · ready' : '$label · failed');
@@ -2809,6 +3165,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       children: [
         const SectionLabel('Session', icon: null),
         const SizedBox(height: 8),
+        _templatePicker(theme),
+        const SizedBox(height: 10),
         TextField(
           controller: _titleController,
           decoration: const InputDecoration(
@@ -3332,30 +3690,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Session overview', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 7,
-                          runSpacing: 7,
-                          children: [
-                            StatusPill(icon: Icons.timer_outlined, label: formatHMS(_currentSession?.durationSeconds ?? _recordDurationSeconds), color: theme.colorScheme.primary),
-                            if (words > 0) StatusPill(icon: Icons.text_snippet_outlined, label: '$words words', color: theme.colorScheme.primary),
-                            if (_currentSession?.transcriptSha256 != null)
-                              StatusPill(icon: Icons.verified_outlined, label: 'Ref ${_currentSession!.transcriptSha256!.substring(0, 8)}', color: theme.colorScheme.secondary),
-                            if (_currentSession?.isVirtualCall == true)
-                              StatusPill(icon: Icons.video_call_outlined, label: 'Call import', color: theme.colorScheme.secondary),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+              PageHeader(
+                title: 'Session overview',
+                subtitle: summary != null ? 'Synthesis with findings and decisions' : 'Transcript ready — synthesis pending',
+                actions: [
                   if (summary != null)
                     OutlinedButton.icon(
                       onPressed: _isTranslatingSummary ? null : _toggleTranslateSummary,
@@ -3365,6 +3703,19 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                       label: Text(_showTranslatedSummary ? 'English' : 'Translate', style: const TextStyle(fontSize: 12)),
                       style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
                     ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: [
+                  StatusPill(icon: Icons.timer_outlined, label: formatHMS(_currentSession?.durationSeconds ?? _recordDurationSeconds), color: theme.colorScheme.primary),
+                  if (words > 0) StatusPill(icon: Icons.text_snippet_outlined, label: '$words words', color: theme.colorScheme.primary),
+                  if (_currentSession?.transcriptSha256 != null)
+                    StatusPill(icon: Icons.verified_outlined, label: 'Ref ${_currentSession!.transcriptSha256!.substring(0, 8)}', color: theme.colorScheme.secondary),
+                  if (_currentSession?.isVirtualCall == true)
+                    StatusPill(icon: Icons.video_call_outlined, label: 'Call import', color: theme.colorScheme.secondary),
                 ],
               ),
               if (_isDemoContent) ...[

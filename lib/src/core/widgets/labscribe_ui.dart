@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../workflow/session_workflow.dart';
 
 /// Reusable premium UI primitives for LabScribe AI.
 /// Keeps every dashboard visually coherent without duplicating styles.
@@ -552,6 +553,109 @@ class _RecordingBarsState extends State<RecordingBars> with SingleTickerProvider
           }),
         );
       },
+    );
+  }
+}
+
+/// Five-step session stepper (Capture → Transcribe → Synthesize → Review →
+/// Export) shown in the persistent session header. Gives every tab a shared
+/// sense of progress through one continuous workflow.
+class StageStepper extends StatelessWidget {
+  final SessionStage current;
+  const StageStepper({super.key, required this.current});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    const order = SessionWorkflow.visible;
+    final currentIdx = current == SessionStage.done ? order.length : order.indexOf(current);
+    return Row(
+      children: List.generate(order.length * 2 - 1, (i) {
+        if (i.isOdd) {
+          final done = (i ~/ 2) < currentIdx;
+          return Expanded(
+            child: Container(
+              height: 2,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(2),
+                color: done
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
+              ),
+            ),
+          );
+        }
+        final idx = i ~/ 2;
+        final stage = order[idx];
+        final done = idx < currentIdx;
+        final isCurrent = idx == currentIdx;
+        final color = done
+            ? theme.colorScheme.primary
+            : (isCurrent ? SessionWorkflow.color(stage) : theme.colorScheme.outline);
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: done || isCurrent
+                    ? color.withValues(alpha: 0.14)
+                    : Colors.transparent,
+                border: Border.all(color: color.withValues(alpha: 0.6)),
+              ),
+              child: Icon(
+                done ? Icons.check : SessionWorkflow.icon(stage),
+                size: 12,
+                color: color,
+              ),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              SessionWorkflow.label(stage),
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600,
+                color: done || isCurrent ? theme.colorScheme.onSurface : theme.colorScheme.outline,
+              ),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+}
+
+/// Standard page header template used by every review tab:
+/// title + subtitle on the left, actions on the right.
+class PageHeader extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final List<Widget> actions;
+  const PageHeader({super.key, required this.title, this.subtitle, this.actions = const []});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 19)),
+              if (subtitle != null) ...[
+                const SizedBox(height: 3),
+                Text(subtitle!, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline)),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        ...actions,
+      ],
     );
   }
 }

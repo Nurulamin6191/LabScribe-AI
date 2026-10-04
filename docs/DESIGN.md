@@ -19,6 +19,21 @@ owners and completion states.
 
 ## 2. Information architecture
 
+One continuous session lifecycle, always visible in the persistent header:
+
+```
+Record → (overview) → Transcribe → Synthesize → Review → Export
+```
+
+The header shows the session title (tap the pencil to rename), a
+five-step `StageStepper` (`lib/src/core/workflow/session_workflow.dart`),
+and a single Continue button that always offers the next valid action:
+Start recording → Transcribe & analyze → Generate insights → Review tasks
+→ Export notes → New session. Finishing recording prompts transcription;
+finishing analysis lands on the Overview; every export advances the stage.
+
+Full destination map (header sits above all of these):
+
 ```
 Record (capture deck: mic, timer, tags, processing)
 Overview (stats · talk time · key moments · synthesis)
@@ -38,6 +53,9 @@ below 900px a 5-destination bottom bar groups related tabs
 ## 3. Design tokens
 
 - Radii: 20px cards, 14px inputs/buttons, 99px pills and meters.
+- Stage accents are fixed per stage (capture red, transcribe amber,
+  synthesize indigo, review teal, export green) and appear only in the
+  stepper dots; the primary Continue action is always teal.
 - Type: system sans, 800-weight titles at 17–20px, 13–14.5px body at 1.5–1.75 line height,
   tabular figures for all timestamps.
 - Color: teal primary (bench-science association), indigo for references,
