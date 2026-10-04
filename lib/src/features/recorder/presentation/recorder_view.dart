@@ -1849,7 +1849,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   Map<String, int> _talkSeconds() {
     final map = <String, int>{};
     for (final turn in _currentSession?.speakerTurns ?? []) {
-      final dur = (turn.endSeconds - turn.startSeconds).clamp(0, 6 * 3600);
+      final dur = (turn.endSeconds - turn.startSeconds).clamp(0, 6 * 3600).toInt();
       map[turn.speakerName] = (map[turn.speakerName] ?? 0) + dur;
     }
     return map;
@@ -2041,7 +2041,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     // Legacy compact entry kept for compatibility; maps old tab indices to desk indices.
     final desk = tabIndex + 1;
     final icons = [Icons.summarize_outlined, Icons.description_outlined, Icons.fact_check_outlined, Icons.record_voice_over_outlined, Icons.medication_liquid_outlined, Icons.library_books_outlined, Icons.forum_outlined];
-    return _deskNavEntry(theme, desk, icons[tabIndex.clamp(0, 6)], label, null);
+    return _deskNavEntry(theme, desk, icons[tabIndex.clamp(0, 6).toInt()], label, null);
   }
 
   Widget _buildDesktopRail(ThemeData theme) {
@@ -2688,7 +2688,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                           overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
                         ),
                         child: Slider(
-                          value: _playbackPosition.inSeconds.toDouble().clamp(0.0, (_playbackDuration.inSeconds.toDouble() > 0 ? _playbackDuration.inSeconds.toDouble() : 1.0)),
+                          value: _playbackPosition.inSeconds.toDouble().clamp(0.0, (_playbackDuration.inSeconds.toDouble() > 0 ? _playbackDuration.inSeconds.toDouble() : 1.0)).toDouble(),
                           min: 0.0,
                           max: _playbackDuration.inSeconds.toDouble() > 0 ? _playbackDuration.inSeconds.toDouble() : 1.0,
                           onChanged: (value) async {

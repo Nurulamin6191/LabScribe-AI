@@ -417,7 +417,7 @@ class TalkTimeBar extends StatelessWidget {
               final frac = e.value / total;
               final color = colorBySpeaker[e.key] ?? theme.colorScheme.primary;
               return Expanded(
-                flex: (frac * 1000).round().clamp(1, 1000),
+                flex: (frac * 1000).round().clamp(1, 1000).toInt(),
                 child: Container(height: 8, color: color),
               );
             }).toList(),
