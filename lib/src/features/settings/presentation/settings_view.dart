@@ -217,7 +217,7 @@ class _SettingsViewState extends State<SettingsView> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Model & Engine Settings'),
+        title: const Text('Engine & Models'),
       ),
       body: Form(
         key: _formKey,
@@ -242,7 +242,7 @@ class _SettingsViewState extends State<SettingsView> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.bolt, size: 22, color: Colors.teal),
+                    Icon(Icons.bolt, size: 22, color: Color(0xFF0A7C6B)),
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -263,7 +263,7 @@ class _SettingsViewState extends State<SettingsView> {
               value: _selectedPreset,
               decoration: const InputDecoration(
                 labelText: 'Configuration Preset',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
               ),
               items: _presets
                   .map((preset) => DropdownMenuItem(value: preset, child: Text(preset, style: const TextStyle(fontSize: 13))))
@@ -280,7 +280,7 @@ class _SettingsViewState extends State<SettingsView> {
               decoration: const InputDecoration(
                 labelText: 'LLM API Base URL',
                 hintText: 'e.g. http://localhost:11434/v1 or http://localhost:8000/v1',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
               ),
               validator: (value) => value!.isEmpty ? 'Required' : null,
             ),
@@ -289,7 +289,7 @@ class _SettingsViewState extends State<SettingsView> {
               controller: _apiKeyController,
               decoration: const InputDecoration(
                 labelText: 'LLM API Key (use "ollama" for local)',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
               ),
               obscureText: true,
             ),
@@ -299,7 +299,7 @@ class _SettingsViewState extends State<SettingsView> {
               decoration: const InputDecoration(
                 labelText: 'LLM Model Name',
                 hintText: 'qwen2.5:7b, biomistral:7b, qwen2.5:1.5b, or llama-3.3-70b-versatile',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
               ),
               validator: (value) => value!.isEmpty ? 'Required' : null,
             ),
@@ -311,7 +311,7 @@ class _SettingsViewState extends State<SettingsView> {
               decoration: const InputDecoration(
                 labelText: 'Transcription Endpoint URL',
                 hintText: 'e.g. http://localhost:8000/v1 or https://api.groq.com/openai/v1',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
               ),
             ),
             const SizedBox(height: 12),
@@ -320,7 +320,7 @@ class _SettingsViewState extends State<SettingsView> {
               decoration: const InputDecoration(
                 labelText: 'Transcription Model Name',
                 hintText: 'whisper-large-v3-turbo, whisper-large-v3, whisper-base',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
               ),
               validator: (value) => value!.isEmpty ? 'Required' : null,
             ),
@@ -331,7 +331,7 @@ class _SettingsViewState extends State<SettingsView> {
               controller: _translateUrlController,
               decoration: const InputDecoration(
                 labelText: 'LibreTranslate URL',
-                border: OutlineInputBorder(),
+                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(14))),
               ),
             ),
             const SizedBox(height: 32),

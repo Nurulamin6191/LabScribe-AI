@@ -13,6 +13,7 @@ import 'package:dio/dio.dart';
 import '../../../core/session_repository.dart';
 import '../../../core/crypto_utils.dart';
 import '../../../core/config_service.dart';
+import '../../../core/widgets/labscribe_ui.dart';
 import '../../settings/presentation/settings_view.dart';
 import '../../export/services/export_service.dart';
 import '../../history/presentation/history_view.dart';
@@ -81,6 +82,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   MeetingSession? _currentSession;
   late TabController _tabController;
   int _mobileNavIndex = 0;
+  int _mobileNotesTab = 0; // 0 Summary, 1 Transcript
+  int _mobileTasksTab = 0; // 0 Protocols, 1 Speakers
   bool _isWaitingForAiChatResponse = false;
   bool _isMeetingCompactMode = false;
 
@@ -1254,49 +1257,60 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   Widget _buildLanguageSelector(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.6)),
-      ),
+    return LabCard(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          const Icon(Icons.language, size: 18, color: Colors.teal),
-          const SizedBox(width: 8),
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: theme.colorScheme.primary.withValues(alpha: 0.12),
+            ),
+            child: Icon(Icons.language, size: 17, color: theme.colorScheme.primary),
+          ),
+          const SizedBox(width: 10),
           const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Language / भाषा', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                Text('Whisper & AI tuning', style: TextStyle(color: Colors.grey, fontSize: 10)),
+                Text('Language / भाषा', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+                Text('Whisper & AI tuning', style: TextStyle(color: Colors.grey, fontSize: 10.5)),
               ],
             ),
           ),
-          DropdownButton<String>(
-            value: _selectedLanguage,
-            underline: const SizedBox(),
-            isDense: true,
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5, color: theme.colorScheme.onSurface),
-            items: const [
-              DropdownMenuItem(value: 'auto', child: Text('🌐 Auto')),
-              DropdownMenuItem(value: 'en', child: Text('🇬🇧 English')),
-              DropdownMenuItem(value: 'hi', child: Text('🇮🇳 हिन्दी (Hindi)')),
-              DropdownMenuItem(value: 'hinglish', child: Text('🇮🇳 Hinglish')),
-            ],
-            onChanged: (val) {
-              if (val != null) {
-                setState(() {
-                  _selectedLanguage = val;
-                });
-                _showSnackBar(
-                  val == 'hi'
-                      ? 'हिन्दी भाषा अनुकूलित (Hindi biomedical optimization active)'
-                      : (val == 'hinglish' ? 'Hinglish code-mixed biomedical optimization active' : 'Language set to ${val.toUpperCase()}'),
-                );
-              }
-            },
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: DropdownButton<String>(
+              value: _selectedLanguage,
+              underline: const SizedBox(),
+              isDense: true,
+              borderRadius: BorderRadius.circular(14),
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: theme.colorScheme.onSurface),
+              items: const [
+                DropdownMenuItem(value: 'auto', child: Text('Auto')),
+                DropdownMenuItem(value: 'en', child: Text('English')),
+                DropdownMenuItem(value: 'hi', child: Text('हिन्दी')),
+                DropdownMenuItem(value: 'hinglish', child: Text('Hinglish')),
+              ],
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() {
+                    _selectedLanguage = val;
+                  });
+                  _showSnackBar(
+                    val == 'hi'
+                        ? 'हिन्दी भाषा अनुकूलित (Hindi biomedical optimization active)'
+                        : (val == 'hinglish' ? 'Hinglish code-mixed biomedical optimization active' : 'Language set to ${val.toUpperCase()}'),
+                  );
+                }
+              },
+            ),
           ),
         ],
       ),
@@ -1306,37 +1320,13 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   Widget _buildScienceMobile(ThemeData theme) {
     return Column(
       children: [
-        Container(
-          color: theme.colorScheme.surface,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: SegmentedButton<int>(
-                  segments: [
-                    ButtonSegment(
-                      value: 0,
-                      icon: const Icon(Icons.medication_liquid, size: 16),
-                      label: Text('PubChem (${_currentSession?.glossaryTerms.length ?? 0})'),
-                    ),
-                    ButtonSegment(
-                      value: 1,
-                      icon: const Icon(Icons.library_books, size: 16),
-                      label: Text('PubMed (${_currentSession?.citations.length ?? 0})'),
-                    ),
-                  ],
-                  selected: {_scienceSubTabIndex},
-                  onSelectionChanged: (set) {
-                    setState(() {
-                      _scienceSubTabIndex = set.first;
-                    });
-                  },
-                ),
-              ),
-            ],
-          ),
+        _segmentedHeader(
+          theme,
+          ['PubChem (${_currentSession?.glossaryTerms.length ?? 0})', 'PubMed (${_currentSession?.citations.length ?? 0})'],
+          [Icons.medication_liquid_outlined, Icons.library_books_outlined],
+          _scienceSubTabIndex,
+          (v) => setState(() => _scienceSubTabIndex = v),
         ),
-        const Divider(height: 1),
         Expanded(
           child: _scienceSubTabIndex == 0
               ? _buildGlossaryTab(theme)
@@ -1535,10 +1525,37 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   // --- Main Build with Accidental Stop & Exit Protection (PopScope) ---
 
+  int get _pipelineStage {
+    switch (_processingStage) {
+      case ProcessingStage.transcribing:
+        return 1;
+      case ProcessingStage.deidentifying:
+      case ProcessingStage.summarizing:
+      case ProcessingStage.extractingTasks:
+      case ProcessingStage.buildingGlossary:
+      case ProcessingStage.resolvingCitations:
+        return 2;
+      case ProcessingStage.completed:
+        return 4;
+      case ProcessingStage.error:
+        return 2;
+      case ProcessingStage.idle:
+        return _currentSession?.summary != null ? 4 : 0;
+    }
+  }
+
+  void _syncTab(int index) {
+    if (_tabController.index != index) {
+      _tabController.animateTo(index);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDesktop = MediaQuery.of(context).size.width >= 900;
+    final width = MediaQuery.of(context).size.width;
+    final isDesktop = width >= 900;
+    final isCompactAction = width < 620;
 
     return PopScope(
       canPop: _recordingState != RecordingState.recording,
@@ -1563,7 +1580,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 child: const Text('Keep Recording'),
               ),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+                style: FilledButton.styleFrom(backgroundColor: Color(0xFFD92D20)),
                 onPressed: () => Navigator.pop(ctx, true),
                 child: const Text('Stop & Exit'),
               ),
@@ -1579,89 +1596,124 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         appBar: AppBar(
           title: Row(
             children: [
-              const Icon(Icons.biotech, color: Colors.tealAccent),
-              const SizedBox(width: 8),
-              Text(
-                _isMeetingCompactMode ? 'LabScribe Meeting Deck' : 'LabScribe AI',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+              const BrandMark(size: 34),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _isMeetingCompactMode ? 'Meeting Deck' : 'LabScribe AI',
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (!isCompactAction)
+                      Text(
+                        _titleController.text.trim().isEmpty
+                            ? 'Translational research companion'
+                            : _titleController.text.trim(),
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: theme.colorScheme.outline,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
               ),
             ],
           ),
           actions: [
-            // Meeting Compact Mode Toggle Button
+            if (widget.intelligenceService.isDemoMode && !isCompactAction)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Tooltip(
+                  message: 'Zero-Setup Mode: Instant AI running out-of-the-box.',
+                  child: StatusPill(
+                    icon: Icons.bolt,
+                    label: 'Zero-Setup AI',
+                    color: theme.colorScheme.tertiary,
+                  ),
+                ),
+              ),
+            if (_currentSession?.isDeIdentified == true && !isCompactAction)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: StatusPill(
+                  icon: Icons.shield,
+                  label: 'HIPAA ${_redactedTokensCount > 0 ? _redactedTokensCount : ""}'.trim(),
+                  color: theme.colorScheme.primary,
+                ),
+              ),
             IconButton(
-              icon: Icon(_isMeetingCompactMode ? Icons.aspect_ratio : Icons.picture_in_picture_alt),
-              tooltip: _isMeetingCompactMode ? 'Expand to Full Dashboards' : 'Switch to Compact Meeting Mode',
+              icon: Icon(_isMeetingCompactMode ? Icons.open_in_full : Icons.picture_in_picture_alt),
+              tooltip: _isMeetingCompactMode ? 'Expand to Full Dashboards' : 'Compact Meeting Mode',
               onPressed: () {
                 setState(() {
                   _isMeetingCompactMode = !_isMeetingCompactMode;
                 });
               },
             ),
-            if (widget.intelligenceService.isDemoMode)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: Tooltip(
-                  message: 'Zero-Setup Mode: Instant AI running out-of-the-box with no servers or API keys required.',
-                  child: Chip(
-                    avatar: const Icon(Icons.bolt, size: 14, color: Colors.amber),
-                    label: const Text(
-                      'Zero-Setup AI',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber),
-                    ),
-                    backgroundColor: Colors.amber.withValues(alpha: 0.12),
-                    side: BorderSide.none,
-                  ),
-                ),
+            if (!isCompactAction) ...[
+              IconButton(
+                icon: const Icon(Icons.auto_stories_outlined),
+                tooltip: 'Notebook Preview',
+                onPressed: _showMarkdownPreviewer,
               ),
-            if (_currentSession?.isDeIdentified == true)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Chip(
-                  avatar: const Icon(Icons.shield, size: 14, color: Colors.teal),
-                  label: Text(
-                    'HIPAA (${_redactedTokensCount > 0 ? _redactedTokensCount : "Protected"})',
-                    style: const TextStyle(fontSize: 11, color: Colors.teal, fontWeight: FontWeight.bold),
-                  ),
-                  backgroundColor: Colors.teal.withOpacity(0.12),
-                ),
+              IconButton(
+                icon: const Icon(Icons.history),
+                tooltip: 'Session History',
+                onPressed: () async {
+                  final selectedSession = await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const HistoryView()),
+                  );
+                  if (selectedSession != null && selectedSession is MeetingSession) {
+                    loadSession(selectedSession);
+                  }
+                },
               ),
-            // In-App Markdown Lab Notebook Preview
-            IconButton(
-              icon: const Icon(Icons.article),
-              tooltip: 'In-App Notebook Preview',
-              onPressed: _showMarkdownPreviewer,
-            ),
-            IconButton(
-              icon: const Icon(Icons.history),
-              tooltip: 'Session History',
-              onPressed: () async {
-                final selectedSession = await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const HistoryView()),
-                );
-                if (selectedSession != null && selectedSession is MeetingSession) {
-                  loadSession(selectedSession);
-                }
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.settings),
-              tooltip: 'Settings & Model Config',
-              onPressed: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SettingsView()),
-                );
-                // Synchronize intelligence service with newly saved config
-                widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
-              },
-            ),
-            // Export Menu: Markdown, Benchling ELN JSON, and BibTeX
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Settings & Model Config',
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const SettingsView()),
+                  );
+                  widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
+                },
+              ),
+            ],
             PopupMenuButton<String>(
-              icon: const Icon(Icons.share),
+              icon: const Icon(Icons.ios_share),
               tooltip: 'Export Research Notes & Citations',
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               onSelected: (value) async {
+                if (value == 'preview') {
+                  _showMarkdownPreviewer();
+                  return;
+                }
+                if (value == 'history') {
+                  final selectedSession = await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const HistoryView()),
+                  );
+                  if (selectedSession != null && selectedSession is MeetingSession) {
+                    loadSession(selectedSession);
+                  }
+                  return;
+                }
+                if (value == 'settings') {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const SettingsView()),
+                  );
+                  widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
+                  return;
+                }
                 if (_currentSession == null) {
                   _showSnackBar('No session to export. Record or load a session first.');
                   return;
@@ -1674,56 +1726,74 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   await ExportService().exportSessionAsBibTeX(_currentSession!);
                 }
               },
-              itemBuilder: (context) => const [
-                PopupMenuItem(
+              itemBuilder: (context) => [
+                if (isCompactAction)
+                  const PopupMenuItem(
+                    value: 'preview',
+                    child: Row(
+                      children: [
+                        Icon(Icons.auto_stories_outlined, size: 18),
+                        SizedBox(width: 8),
+                        Text('Notebook Preview'),
+                      ],
+                    ),
+                  ),
+                if (isCompactAction)
+                  const PopupMenuItem(
+                    value: 'history',
+                    child: Row(
+                      children: [
+                        Icon(Icons.history, size: 18),
+                        SizedBox(width: 8),
+                        Text('Session History'),
+                      ],
+                    ),
+                  ),
+                if (isCompactAction)
+                  const PopupMenuItem(
+                    value: 'settings',
+                    child: Row(
+                      children: [
+                        Icon(Icons.settings_outlined, size: 18),
+                        SizedBox(width: 8),
+                        Text('Settings'),
+                      ],
+                    ),
+                  ),
+                const PopupMenuItem(
                   value: 'markdown',
                   child: Row(
                     children: [
-                      Icon(Icons.description, size: 18, color: Colors.teal),
+                      Icon(Icons.description_outlined, size: 18, color: Color(0xFF0A7C6B)),
                       SizedBox(width: 8),
-                      Text('Lab Notebook Markdown (.md)'),
+                      Text('Lab Notebook (.md)'),
                     ],
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: 'eln',
                   child: Row(
                     children: [
-                      Icon(Icons.integration_instructions, size: 18, color: Colors.indigo),
+                      Icon(Icons.integration_instructions, size: 18, color: Color(0xFF3B5BFF)),
                       SizedBox(width: 8),
-                      Text('Benchling / ELN JSON (.json)'),
+                      Text('Benchling ELN (.json)'),
                     ],
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: 'bibtex',
                   child: Row(
                     children: [
                       Icon(Icons.format_quote, size: 18, color: Colors.blue),
                       SizedBox(width: 8),
-                      Text('BibTeX Citations (.bib) [Zotero]'),
+                      Text('BibTeX (.bib)'),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
           ],
-          bottom: (isDesktop && !_isMeetingCompactMode)
-              ? TabBar(
-                  controller: _tabController,
-                  isScrollable: true,
-                  tabs: const [
-                    Tab(icon: Icon(Icons.science), text: 'Scientific Summary'),
-                    Tab(icon: Icon(Icons.description), text: 'Full Transcript'),
-                    Tab(icon: Icon(Icons.assignment_turned_in), text: 'Protocols & Tasks'),
-                    Tab(icon: Icon(Icons.record_voice_over), text: 'Speakers & Dialog'),
-                    Tab(icon: Icon(Icons.medication_liquid), text: 'Bio/Chem (PubChem)'),
-                    Tab(icon: Icon(Icons.library_books), text: 'Literature (PubMed)'),
-                    Tab(icon: Icon(Icons.forum), text: 'Research Q&A'),
-                  ],
-                )
-              : null,
         ),
         body: _buildResponsiveBody(context, theme, isDesktop),
         bottomNavigationBar: (!isDesktop && !_isMeetingCompactMode)
@@ -1735,14 +1805,79 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   });
                 },
                 destinations: const [
-                  NavigationDestination(icon: Icon(Icons.mic), label: 'Record'),
-                  NavigationDestination(icon: Icon(Icons.description), label: 'Transcript'),
-                  NavigationDestination(icon: Icon(Icons.science), label: 'Summary'),
-                  NavigationDestination(icon: Icon(Icons.biotech), label: 'Science'),
-                  NavigationDestination(icon: Icon(Icons.forum), label: 'Q&A'),
+                  NavigationDestination(icon: Icon(Icons.mic_outlined), selectedIcon: Icon(Icons.mic), label: 'Record'),
+                  NavigationDestination(icon: Icon(Icons.summarize_outlined), selectedIcon: Icon(Icons.summarize), label: 'Notes'),
+                  NavigationDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check), label: 'Tasks'),
+                  NavigationDestination(icon: Icon(Icons.science_outlined), selectedIcon: Icon(Icons.science), label: 'Library'),
+                  NavigationDestination(icon: Icon(Icons.forum_outlined), selectedIcon: Icon(Icons.forum), label: 'Q&A'),
                 ],
               )
             : null,
+      ),
+    );
+  }
+
+  Widget _railDestination(ThemeData theme, int tabIndex, IconData icon, String label) {
+    final selected = _tabController.index == tabIndex;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => setState(() => _tabController.animateTo(tabIndex)),
+        child: Container(
+          width: 68,
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.6) : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            border: selected
+                ? Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3))
+                : null,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 20, color: selected ? theme.colorScheme.primary : theme.colorScheme.outline),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  color: selected ? theme.colorScheme.onSurface : theme.colorScheme.outline,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesktopRail(ThemeData theme) {
+    return Container(
+      width: 84,
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(right: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
+      ),
+      child: AnimatedBuilder(
+        animation: _tabController,
+        builder: (context, _) => SingleChildScrollView(
+          child: Column(
+            children: [
+              _railDestination(theme, 0, Icons.summarize_outlined, 'Summary'),
+              _railDestination(theme, 1, Icons.description_outlined, 'Transcript'),
+              _railDestination(theme, 2, Icons.fact_check_outlined, 'Protocols'),
+              _railDestination(theme, 3, Icons.record_voice_over_outlined, 'Speakers'),
+              _railDestination(theme, 4, Icons.medication_liquid_outlined, 'Compounds'),
+              _railDestination(theme, 5, Icons.library_books_outlined, 'Papers'),
+              _railDestination(theme, 6, Icons.forum_outlined, 'Q&A'),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1751,9 +1886,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     if (_isMeetingCompactMode) {
       return Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(20),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 620),
+            constraints: const BoxConstraints(maxWidth: 600),
             child: _buildCompactMeetingDeck(theme),
           ),
         ),
@@ -1762,14 +1897,22 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
     if (isDesktop) {
       return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            width: 380,
+          _buildDesktopRail(theme),
+          Container(
+            width: 372,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              border: Border(
+                right: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6)),
+              ),
+            ),
             child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
               child: _buildRecordingControlPanel(theme),
             ),
           ),
-          const VerticalDivider(width: 1, thickness: 1),
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -1790,282 +1933,192 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
     switch (_mobileNavIndex) {
       case 0:
-        return SingleChildScrollView(child: _buildRecordingControlPanel(theme));
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: _buildRecordingControlPanel(theme),
+        );
       case 1:
-        return _buildTranscriptTab(theme);
+        return _buildMobileNotes(theme);
       case 2:
-        return _buildSummaryTab(theme);
+        return _buildMobileTasks(theme);
       case 3:
         return _buildScienceMobile(theme);
       case 4:
         return _buildChatTab(theme);
       default:
-        return SingleChildScrollView(child: _buildRecordingControlPanel(theme));
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: _buildRecordingControlPanel(theme),
+        );
     }
+  }
+
+  Widget _segmentedHeader(ThemeData theme, List<String> labels, List<IconData> icons, int selected, ValueChanged<int> onSelect) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
+      ),
+      child: SegmentedButton<int>(
+        segments: List.generate(
+          labels.length,
+          (i) => ButtonSegment(
+            value: i,
+            icon: Icon(icons[i], size: 15),
+            label: Text(labels[i], style: const TextStyle(fontSize: 12)),
+          ),
+        ),
+        selected: {selected},
+        onSelectionChanged: (s) => onSelect(s.first),
+        showSelectedIcon: false,
+        style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
+      ),
+    );
+  }
+
+  Widget _buildMobileNotes(ThemeData theme) {
+    return Column(
+      children: [
+        _segmentedHeader(
+          theme,
+          ['Summary', 'Transcript'],
+          [Icons.summarize_outlined, Icons.description_outlined],
+          _mobileNotesTab,
+          (v) {
+            setState(() => _mobileNotesTab = v);
+            _syncTab(v == 0 ? 0 : 1);
+          },
+        ),
+        Expanded(child: _mobileNotesTab == 0 ? _buildSummaryTab(theme) : _buildTranscriptTab(theme)),
+      ],
+    );
+  }
+
+  Widget _buildMobileTasks(ThemeData theme) {
+    final protoCount = _currentSession?.actionItems.length ?? 0;
+    final spkCount = _currentSession?.speakerTurns.length ?? 0;
+    return Column(
+      children: [
+        _segmentedHeader(
+          theme,
+          ['Protocols ($protoCount)', 'Speakers ($spkCount)'],
+          [Icons.fact_check_outlined, Icons.record_voice_over_outlined],
+          _mobileTasksTab,
+          (v) {
+            setState(() => _mobileTasksTab = v);
+            _syncTab(v == 0 ? 2 : 3);
+          },
+        ),
+        Expanded(child: _mobileTasksTab == 0 ? _buildTasksTab(theme) : _buildSpeakersTab(theme)),
+      ],
+    );
   }
 
   // --- Meeting Compact Deck Mode ---
 
   Widget _buildCompactMeetingDeck(ThemeData theme) {
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    _titleController.text.trim().isEmpty ? 'Scientific Meeting' : _titleController.text.trim(),
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.fullscreen),
-                  tooltip: 'Expand Full Dashboards',
-                  onPressed: () => setState(() => _isMeetingCompactMode = false),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Pulsing Timer Display
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer.withOpacity(0.25),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: _recordingState == RecordingState.recording
-                      ? Colors.redAccent
-                      : theme.colorScheme.outlineVariant,
-                  width: 1.5,
+    return LabCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const BrandMark(size: 32),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _titleController.text.trim().isEmpty ? 'Scientific Meeting' : _titleController.text.trim(),
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const Text('Compact dock · stays beside Zoom / Meet', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  ],
                 ),
               ),
-              child: Column(
-                children: [
-                  Text(
-                    _formatDuration(_recordDurationSeconds),
-                    style: theme.textTheme.displaySmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                      color: _recordingState == RecordingState.recording ? Colors.redAccent : theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _recordingState == RecordingState.recording
-                              ? Colors.redAccent
-                              : (_recordingState == RecordingState.paused ? Colors.orange : Colors.grey),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _recordingState == RecordingState.recording
-                            ? 'RECORDING ACTIVE (AIR-GAPPED MIC)'
-                            : _recordingState.name.toUpperCase(),
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
-                      ),
-                    ],
-                  ),
-                ],
+              IconButton(
+                icon: const Icon(Icons.open_in_full, size: 18),
+                tooltip: 'Expand Full Dashboards',
+                onPressed: () => setState(() => _isMeetingCompactMode = false),
               ),
-            ),
-            const SizedBox(height: 14),
-
-            // Microphone Selector
-            _buildAudioDeviceSelector(theme),
-            const SizedBox(height: 10),
-
-            // Multilingual Hindi/English Optimization Selector
-            _buildLanguageSelector(theme),
-            const SizedBox(height: 14),
-
-            // Primary Audio Action Controls
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              alignment: WrapAlignment.center,
-              children: [
-                if (_recordingState == RecordingState.idle || _recordingState == RecordingState.stopped) ...[
-                  ElevatedButton.icon(
-                    onPressed: _startRecording,
-                    icon: const Icon(Icons.fiber_manual_record, color: Colors.white),
-                    label: const Text('Start Recording'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _importAudioFileDialog,
-                    icon: const Icon(Icons.file_upload_outlined, size: 16),
-                    label: const Text('Import Audio'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _showPasteTranscriptDialog,
-                    icon: const Icon(Icons.paste, size: 16),
-                    label: const Text('Paste Text'),
-                  ),
-                ],
-                if (_recordingState == RecordingState.recording) ...[
-                  OutlinedButton.icon(
-                    onPressed: _pauseRecording,
-                    icon: const Icon(Icons.pause),
-                    label: const Text('Pause'),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: _stopRecording,
-                    icon: const Icon(Icons.stop),
-                    label: const Text('Stop'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueGrey,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ],
-                if (_recordingState == RecordingState.paused) ...[
-                  ElevatedButton.icon(
-                    onPressed: _resumeRecording,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Resume'),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: _stopRecording,
-                    icon: const Icon(Icons.stop),
-                    label: const Text('Stop'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueGrey,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Meeting 1-Click Reaction & Bookmark Tags
-            const Text(
-              'QUICK MEETING TAGS (ONE-CLICK BOOKMARK)',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ActionChip(
-                  avatar: const Text('⚡'),
-                  label: const Text('Action Item'),
-                  onPressed: () => _quickAddTag('⚡', 'Action Item'),
-                ),
-                ActionChip(
-                  avatar: const Text('🔬'),
-                  label: const Text('Hypothesis'),
-                  onPressed: () => _quickAddTag('🔬', 'Hypothesis'),
-                ),
-                ActionChip(
-                  avatar: const Text('📊'),
-                  label: const Text('Key Result'),
-                  onPressed: () => _quickAddTag('📊', 'Key Result'),
-                ),
-                ActionChip(
-                  avatar: const Text('⚠️'),
-                  label: const Text('Question'),
-                  onPressed: () => _quickAddTag('⚠️', 'Open Question'),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.edit_note, size: 16),
-                  label: const Text('Custom Note'),
-                  onPressed: _addLiveMeetingNoteDialog,
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Live Stream of Bookmarks in Current Meeting
-            if (_currentSession?.liveNotes.isNotEmpty == true) ...[
-              const Divider(),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Meeting Stream (${_currentSession!.liveNotes.length})',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  Text('${_currentSession!.slideAttachments.length} Figures',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Container(
-                constraints: const BoxConstraints(maxHeight: 140),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _currentSession!.liveNotes.length,
-                  itemBuilder: (ctx, idx) {
-                    final n = _currentSession!.liveNotes[idx];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              _formatDuration(n.timestampSeconds),
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Colors.deepOrange),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(n.note, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
             ],
-
-            // Slide / Gel Attachment Button
-            OutlinedButton.icon(
-              onPressed: _attachFigureDialog,
-              icon: const Icon(Icons.add_photo_alternate, size: 16),
-              label: const Text('Attach Slide / Gel Figure'),
+          ),
+          const SizedBox(height: 14),
+          _timerHero(theme, large: true),
+          const SizedBox(height: 12),
+          _buildAudioDeviceSelector(theme),
+          const SizedBox(height: 8),
+          _buildLanguageSelector(theme),
+          const SizedBox(height: 12),
+          _recordActions(theme),
+          const SizedBox(height: 14),
+          _quickTags(theme, dense: true),
+          const SizedBox(height: 12),
+          if (_currentSession?.liveNotes.isNotEmpty == true) ...[
+            SectionLabel('Live stream · ${_currentSession!.liveNotes.length}', icon: Icons.bolt_outlined),
+            const SizedBox(height: 8),
+            Container(
+              constraints: const BoxConstraints(maxHeight: 132),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.5)),
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _currentSession!.liveNotes.length,
+                itemBuilder: (ctx, idx) {
+                  final n = _currentSession!.liveNotes[idx];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.tertiary.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                          child: Text(
+                            formatMS(n.timestampSeconds),
+                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5, color: theme.colorScheme.tertiary, fontFeatures: const [FontFeature.tabularFigures()]),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(n.note, style: const TextStyle(fontSize: 12.5), overflow: TextOverflow.ellipsis)),
+                      ],
+                    ),
+                  );
+                },
+              ),
             ),
-            const SizedBox(height: 12),
-
-            // Expand Button
-            FilledButton.tonalIcon(
-              onPressed: () => setState(() => _isMeetingCompactMode = false),
-              icon: const Icon(Icons.auto_awesome),
-              label: const Text('Open Scientific Intelligence Dashboards'),
-            ),
+            const SizedBox(height: 10),
           ],
-        ),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _attachFigureDialog,
+                  icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
+                  label: const Text('Slide / Gel'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: () => setState(() => _isMeetingCompactMode = false),
+                  icon: const Icon(Icons.auto_awesome, size: 16),
+                  label: const Text('Dashboards'),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -2073,34 +2126,40 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   // --- Microphone Device Selector Dropdown ---
 
   Widget _buildAudioDeviceSelector(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.6)),
-      ),
+    return LabCard(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Row(
         children: [
-          const Icon(Icons.mic_external_on, size: 18, color: Colors.teal),
-          const SizedBox(width: 8),
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: theme.colorScheme.primary.withValues(alpha: 0.12),
+            ),
+            child: Icon(Icons.mic_external_on, size: 17, color: theme.colorScheme.primary),
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: _audioInputDevices.isEmpty
-                ? const Text(
-                    'Default System Microphone',
-                    style: TextStyle(fontSize: 12),
-                    overflow: TextOverflow.ellipsis,
+                ? const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Default System Microphone', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700), overflow: TextOverflow.ellipsis),
+                      Text('Air-gapped local input', style: TextStyle(fontSize: 10.5, color: Colors.grey)),
+                    ],
                   )
                 : DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
                       isExpanded: true,
                       value: _selectedDeviceId,
+                      borderRadius: BorderRadius.circular(14),
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface),
                       items: _audioInputDevices.map((dev) {
                         return DropdownMenuItem<String>(
                           value: dev.id,
                           child: Text(
                             dev.label.isNotEmpty ? dev.label : 'Microphone (${dev.id})',
-                            style: const TextStyle(fontSize: 12),
                             overflow: TextOverflow.ellipsis,
                           ),
                         );
@@ -2120,440 +2179,422 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             icon: const Icon(Icons.refresh, size: 16),
             tooltip: 'Refresh Microphones',
             onPressed: _loadAudioDevices,
+            visualDensity: VisualDensity.compact,
           ),
         ],
       ),
+    );
+  }
+
+  Widget _timerHero(ThemeData theme, {bool large = false}) {
+    final isRec = _recordingState == RecordingState.recording;
+    final isPaused = _recordingState == RecordingState.paused;
+    final dot = isRec
+        ? const Color(0xFFD92D20)
+        : (isPaused ? Colors.orange : Colors.grey);
+    final status = isRec
+        ? 'RECORDING · AIR-GAPPED MIC'
+        : _recordingState.name.toUpperCase();
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 20, vertical: large ? 18 : 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            theme.colorScheme.primaryContainer.withValues(alpha: 0.55),
+            theme.colorScheme.secondaryContainer.withValues(alpha: 0.45),
+          ],
+        ),
+        border: Border.all(
+          color: isRec ? const Color(0xFFD92D20).withValues(alpha: 0.6) : theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+          width: 1.2,
+        ),
+      ),
+      child: Column(
+        children: [
+          Text(
+            formatHMS(_recordDurationSeconds),
+            style: TextStyle(
+              fontSize: large ? 38 : 30,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2.5,
+              fontFeatures: const [FontFeature.tabularFigures()],
+              color: isRec ? const Color(0xFFD92D20) : theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 9,
+                height: 9,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: dot),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                status,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5, letterSpacing: 0.8),
+              ),
+            ],
+          ),
+          if (_currentSession != null && (_currentSession!.liveNotes.isNotEmpty || _currentSession!.slideAttachments.isNotEmpty)) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                StatusPill(icon: Icons.bookmark, label: '${_currentSession!.liveNotes.length} notes', color: theme.colorScheme.tertiary),
+                const SizedBox(width: 8),
+                StatusPill(icon: Icons.image_outlined, label: '${_currentSession!.slideAttachments.length} figs', color: theme.colorScheme.secondary),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _recordActions(ThemeData theme, {bool compact = false}) {
+    final idle = _recordingState == RecordingState.idle || _recordingState == RecordingState.stopped;
+    if (idle) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FilledButton.icon(
+            onPressed: _startRecording,
+            icon: const Icon(Icons.fiber_manual_record, size: 16),
+            label: const Text('Start Recording'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFD92D20),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 15),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _importAudioFileDialog(),
+                  icon: const Icon(Icons.file_upload_outlined, size: 15),
+                  label: const Text('Import'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _showPasteTranscriptDialog,
+                  icon: const Icon(Icons.paste_outlined, size: 15),
+                  label: const Text('Paste'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+    if (_recordingState == RecordingState.recording) {
+      return Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _pauseRecording,
+              icon: const Icon(Icons.pause, size: 16),
+              label: const Text('Pause'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: _stopRecording,
+              icon: const Icon(Icons.stop, size: 16),
+              label: const Text('Stop & Seal'),
+              style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.onSurface),
+            ),
+          ),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: _resumeRecording,
+            icon: const Icon(Icons.play_arrow, size: 16),
+            label: const Text('Resume'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _stopRecording,
+            icon: const Icon(Icons.stop, size: 16),
+            label: const Text('Stop'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _quickTags(ThemeData theme, {bool dense = false}) {
+    Widget tag(IconData icon, String label, String emoji, String tagLabel, Color color) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _quickAddTag(emoji, tagLabel),
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: dense ? 8 : 10, vertical: dense ? 7 : 8),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.28)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 13, color: color),
+              const SizedBox(width: 5),
+              Text(label, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionLabel(
+          'Quick tags',
+          icon: Icons.bolt_outlined,
+          trailing: TextButton(
+            onPressed: _addLiveMeetingNoteDialog,
+            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            child: const Text('Custom note', style: TextStyle(fontSize: 11.5)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 7,
+          runSpacing: 7,
+          children: [
+            tag(Icons.flash_on_outlined, 'Action', '⚡', 'Action Item', theme.colorScheme.tertiary),
+            tag(Icons.lightbulb_outline, 'Hypothesis', '🔬', 'Hypothesis', theme.colorScheme.primary),
+            tag(Icons.query_stats_outlined, 'Result', '📊', 'Key Result', theme.colorScheme.secondary),
+            tag(Icons.help_outline, 'Question', '⚠️', 'Open Question', theme.colorScheme.error),
+          ],
+        ),
+      ],
     );
   }
 
   // --- Left Sidebar: Audio & Meeting Control Deck ---
 
   Widget _buildRecordingControlPanel(ThemeData theme) {
-    return Container(
-      color: theme.colorScheme.surface,
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: _titleController,
-            decoration: const InputDecoration(
-              labelText: 'Scientific Session Title',
-              hintText: 'e.g. KRAS G12C NSCLC Seminar or Immunology Review',
-              prefixIcon: Icon(Icons.science_outlined),
-              border: OutlineInputBorder(),
-            ),
+    final canProcess = (_recordingState == RecordingState.stopped || _currentSession != null) &&
+        _processingStage != ProcessingStage.transcribing &&
+        _processingStage != ProcessingStage.summarizing;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionLabel('Session', icon: null),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _titleController,
+          decoration: const InputDecoration(
+            labelText: 'Session title',
+            hintText: 'e.g. KRAS G12C NSCLC seminar',
+            prefixIcon: Icon(Icons.science_outlined, size: 18),
           ),
-          const SizedBox(height: 14),
-
-          // Audio Input Device Selector
-          _buildAudioDeviceSelector(theme),
-          const SizedBox(height: 10),
-
-          // Multilingual Hindi/English Optimization Selector
-          _buildLanguageSelector(theme),
-          const SizedBox(height: 14),
-
-          // Timer Display with Pulsing Audio Activity
-          Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: _recordingState == RecordingState.recording
-                      ? Colors.redAccent
-                      : theme.colorScheme.outlineVariant,
-                ),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    _formatDuration(_recordDurationSeconds),
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                      color: _recordingState == RecordingState.recording
-                          ? Colors.redAccent
-                          : theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _recordingState == RecordingState.recording
-                              ? Colors.redAccent
-                              : (_recordingState == RecordingState.paused ? Colors.orange : Colors.grey),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _recordingState == RecordingState.recording
-                            ? 'RECORDING ACTIVE (MIC ON)'
-                            : _recordingState.name.toUpperCase(),
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // Control Buttons
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              if (_recordingState == RecordingState.idle || _recordingState == RecordingState.stopped) ...[
-                ElevatedButton.icon(
-                  onPressed: _startRecording,
-                  icon: const Icon(Icons.fiber_manual_record, color: Colors.white),
-                  label: const Text('Record'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.redAccent,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _importAudioFileDialog,
-                  icon: const Icon(Icons.file_upload_outlined, size: 16),
-                  label: const Text('Import Audio'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _showPasteTranscriptDialog,
-                  icon: const Icon(Icons.paste, size: 16),
-                  label: const Text('Paste Text'),
-                ),
-              ],
-              if (_recordingState == RecordingState.recording) ...[
-                OutlinedButton.icon(
-                  onPressed: _pauseRecording,
-                  icon: const Icon(Icons.pause),
-                  label: const Text('Pause'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _stopRecording,
-                  icon: const Icon(Icons.stop),
-                  label: const Text('Stop'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueGrey,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-              if (_recordingState == RecordingState.paused) ...[
-                ElevatedButton.icon(
-                  onPressed: _resumeRecording,
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Resume'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _stopRecording,
-                  icon: const Icon(Icons.stop),
-                  label: const Text('Stop'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueGrey,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // 1-Click Meeting Tag Pills
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            alignment: WrapAlignment.center,
-            children: [
-              ActionChip(
-                visualDensity: VisualDensity.compact,
-                avatar: const Text('⚡', style: TextStyle(fontSize: 12)),
-                label: const Text('Action', style: TextStyle(fontSize: 11)),
-                onPressed: () => _quickAddTag('⚡', 'Action Item'),
-              ),
-              ActionChip(
-                visualDensity: VisualDensity.compact,
-                avatar: const Text('🔬', style: TextStyle(fontSize: 12)),
-                label: const Text('Hypothesis', style: TextStyle(fontSize: 11)),
-                onPressed: () => _quickAddTag('🔬', 'Hypothesis'),
-              ),
-              ActionChip(
-                visualDensity: VisualDensity.compact,
-                avatar: const Text('📊', style: TextStyle(fontSize: 12)),
-                label: const Text('Result', style: TextStyle(fontSize: 11)),
-                onPressed: () => _quickAddTag('📊', 'Key Result'),
-              ),
-              ActionChip(
-                visualDensity: VisualDensity.compact,
-                avatar: const Text('⚠️', style: TextStyle(fontSize: 12)),
-                label: const Text('Question', style: TextStyle(fontSize: 11)),
-                onPressed: () => _quickAddTag('⚠️', 'Open Question'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          // Detailed Custom Bookmark Button
-          OutlinedButton.icon(
-            onPressed: _addLiveMeetingNoteDialog,
-            icon: const Icon(Icons.bookmark_add, color: Colors.orange, size: 16),
-            label: Text('Custom Note at ${_formatDuration(_recordDurationSeconds)}'),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Colors.orange),
-              padding: const EdgeInsets.symmetric(vertical: 8),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Audio Playback Bar
-          if (_recordingState == RecordingState.stopped && _recordedAudioPath != null) ...[
-            Row(
-              children: [
-                IconButton(
-                  icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
-                  onPressed: () async {
-                    if (_isPlaying) {
-                      await _audioPlayer.pause();
-                    } else {
-                      await _audioPlayer.play(DeviceFileSource(_recordedAudioPath!));
-                    }
-                  },
-                ),
-                Expanded(
-                  child: Slider(
-                    value: _playbackPosition.inSeconds.toDouble(),
-                    min: 0.0,
-                    max: _playbackDuration.inSeconds.toDouble() > 0 ? _playbackDuration.inSeconds.toDouble() : 1.0,
-                    onChanged: (value) async {
-                      await _audioPlayer.seek(Duration(seconds: value.toInt()));
-                    },
-                  ),
-                ),
-                Text(
-                  '${_playbackPosition.inSeconds}/${_playbackDuration.inSeconds}s',
-                  style: const TextStyle(fontSize: 11),
-                ),
-              ],
-            ),
-          ],
-
-          // Slide / Lab Figure Snapshot Button
-          OutlinedButton.icon(
-            onPressed: _attachFigureDialog,
-            icon: const Icon(Icons.add_photo_alternate, size: 16),
-            label: const Text('Attach Slide / Gel Figure'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Wet-Lab Noise Suppressor Switch
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: const Text('Wet-Lab Noise Filter', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              subtitle: const Text('Suppresses hood & centrifuge drone', style: TextStyle(fontSize: 10)),
-              value: _enableNoiseSuppression,
-              onChanged: (val) {
-                setState(() {
-                  _enableNoiseSuppression = val;
-                });
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Clinical De-Identification Switch
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: const Text('Clinical PHI Scrubber', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              subtitle: const Text('Redacts patient names & MRNs', style: TextStyle(fontSize: 10)),
-              value: _enableClinicalDeIdentification,
-              onChanged: (val) {
-                setState(() {
-                  _enableClinicalDeIdentification = val;
-                });
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Virtual Call Mode Switch (Zoom / WhatsApp / Teams)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
-              borderRadius: BorderRadius.circular(10),
-            ),
+        ),
+        const SizedBox(height: 10),
+        _buildAudioDeviceSelector(theme),
+        const SizedBox(height: 8),
+        _buildLanguageSelector(theme),
+        const SizedBox(height: 12),
+        _timerHero(theme),
+        const SizedBox(height: 12),
+        _recordActions(theme),
+        const SizedBox(height: 12),
+        if (_recordingState == RecordingState.stopped && _recordedAudioPath != null)
+          LabCard(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: Row(
               children: [
-                Expanded(
-                  child: SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    title: const Text('Virtual Call Mode', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Zoom / WhatsApp / Teams Audio', style: TextStyle(fontSize: 10)),
-                    value: _isVirtualCallMode,
-                    onChanged: (val) {
-                      setState(() {
-                        _isVirtualCallMode = val;
-                        if (_currentSession != null) {
-                          _currentSession!.isVirtualCall = val;
-                        }
-                      });
-                      if (_currentSession != null) {
-                        SessionRepository().saveSession(_currentSession!);
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: theme.colorScheme.primary.withValues(alpha: 0.14)),
+                  child: IconButton(
+                    icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, size: 18),
+                    onPressed: () async {
+                      if (_isPlaying) {
+                        await _audioPlayer.pause();
+                      } else {
+                        await _audioPlayer.play(DeviceFileSource(_recordedAudioPath!));
                       }
                     },
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.help_outline, size: 18, color: Colors.blueAccent),
-                  tooltip: 'Virtual Call Audio Capture Guide',
-                  onPressed: _showVirtualCallGuideDialog,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                        ),
+                        child: Slider(
+                          value: _playbackPosition.inSeconds.toDouble().clamp(0.0, (_playbackDuration.inSeconds.toDouble() > 0 ? _playbackDuration.inSeconds.toDouble() : 1.0)),
+                          min: 0.0,
+                          max: _playbackDuration.inSeconds.toDouble() > 0 ? _playbackDuration.inSeconds.toDouble() : 1.0,
+                          onChanged: (value) async {
+                            await _audioPlayer.seek(Duration(seconds: value.toInt()));
+                          },
+                        ),
+                      ),
+                      Text('${formatMS(_playbackPosition.inSeconds)} / ${formatMS(_playbackDuration.inSeconds)} · local playback', style: TextStyle(fontSize: 10.5, color: theme.colorScheme.outline)),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-
-          // Trigger AI Intelligence
-          ElevatedButton.icon(
-            onPressed: (_recordingState == RecordingState.stopped || _currentSession != null) &&
-                    _processingStage != ProcessingStage.transcribing &&
-                    _processingStage != ProcessingStage.summarizing
-                ? _executeAiPipeline
-                : null,
-            icon: const Icon(Icons.auto_awesome),
-            label: const Text('Process AI Tasks & Insights'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: theme.colorScheme.primary,
-              foregroundColor: theme.colorScheme.onPrimary,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-            ),
+        if (_recordingState == RecordingState.stopped && _recordedAudioPath != null) const SizedBox(height: 12),
+        LabCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _quickTags(theme, dense: true),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _addLiveMeetingNoteDialog,
+                  icon: const Icon(Icons.bookmark_add_outlined, size: 15),
+                  label: Text('Note at ${formatHMS(_recordDurationSeconds)}'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _attachFigureDialog,
+                  icon: const Icon(Icons.add_photo_alternate_outlined, size: 15),
+                  label: const Text('Attach slide / gel figure'),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-
-          // Pipeline status bar
-          if (_processingStage != ProcessingStage.idle) ...[
-            LinearProgressIndicator(
-              value: _processingStage == ProcessingStage.completed
-                  ? 1.0
-                  : (_processingStage == ProcessingStage.transcribing
-                      ? 0.3
-                      : _processingStage == ProcessingStage.deidentifying
-                          ? 0.5
-                          : 0.8),
-            ),
-            const SizedBox(height: 6),
-          ],
-          Text(
-            _statusMessage,
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline, fontSize: 11),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 14),
-
-          // Storage Info Footer
-          if (_recordedAudioPath != null)
-            Card(
-              elevation: 0,
-              color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        ),
+        const SizedBox(height: 12),
+        LabCard(
+          child: Column(
+            children: [
+              const SectionLabel('Capture lab', icon: null),
+              SettingRow(
+                icon: Icons.graphic_eq,
+                iconColor: theme.colorScheme.primary,
+                title: 'Wet-lab noise filter',
+                subtitle: 'Hood · centrifuge · freezer hum',
+                trailing: Switch(value: _enableNoiseSuppression, onChanged: (v) => setState(() => _enableNoiseSuppression = v)),
+              ),
+              const Divider(height: 8),
+              SettingRow(
+                icon: Icons.shield_outlined,
+                iconColor: theme.colorScheme.tertiary,
+                title: 'PHI scrubber',
+                subtitle: 'HIPAA Safe Harbor on-device',
+                trailing: Switch(value: _enableClinicalDeIdentification, onChanged: (v) => setState(() => _enableClinicalDeIdentification = v)),
+              ),
+              const Divider(height: 8),
+              SettingRow(
+                icon: Icons.video_call_outlined,
+                iconColor: theme.colorScheme.secondary,
+                title: 'Virtual call mode',
+                subtitle: 'Zoom · WhatsApp · Teams',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('Local Audio Cache (Air-Gapped):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                    const SizedBox(height: 2),
-                    Text(
-                      _recordedAudioPath!,
-                      style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    IconButton(icon: const Icon(Icons.help_outline, size: 17), tooltip: 'Capture guide', onPressed: _showVirtualCallGuideDialog, visualDensity: VisualDensity.compact),
+                    Switch(
+                      value: _isVirtualCallMode,
+                      onChanged: (val) {
+                        setState(() {
+                          _isVirtualCallMode = val;
+                          if (_currentSession != null) _currentSession!.isVirtualCall = val;
+                        });
+                        if (_currentSession != null) SessionRepository().saveSession(_currentSession!);
+                      },
                     ),
                   ],
                 ),
               ),
-            ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        FilledButton.icon(
+          onPressed: canProcess ? _executeAiPipeline : null,
+          icon: const Icon(Icons.auto_awesome, size: 16),
+          label: const Text('Process AI insights'),
+          style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15)),
+        ),
+        const SizedBox(height: 10),
+        LabCard(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              PipelineSteps(activeStage: _pipelineStage, hasError: _processingStage == ProcessingStage.error),
+              const SizedBox(height: 8),
+              Text(_statusMessage, style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline, height: 1.4)),
+              if (_processingStage != ProcessingStage.idle && _processingStage != ProcessingStage.completed && _processingStage != ProcessingStage.error) ...[
+                const SizedBox(height: 8),
+                const LinearProgressIndicator(),
+              ],
+            ],
+          ),
+        ),
+        if (_recordedAudioPath != null) ...[
+          const SizedBox(height: 10),
+          Text('Air-gapped cache · ${_recordedAudioPath!.split(RegExp(r"[/\\\\]")).last}', style: TextStyle(fontSize: 10, color: theme.colorScheme.outline, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
         ],
-      ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 
   // --- Intelligence Tab: Full Transcript & Multilingual Editor ---
 
+  Widget _pageWrap(ThemeData theme, Widget child, {double maxWidth = 880}) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   Widget _buildTranscriptTab(ThemeData theme) {
     final transcript = _currentSession?.transcript ?? '';
 
     if (transcript.isEmpty) {
-      return Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: theme.colorScheme.outlineVariant),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.description_outlined, size: 52, color: theme.colorScheme.primary),
-                    const SizedBox(height: 14),
-                    Text(
-                      'No Transcript Available Yet',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Record audio using the recording deck, import an existing audio file, or paste your meeting notes below to analyze with AI.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 13, color: Colors.grey, height: 1.4),
-                    ),
-                    const SizedBox(height: 20),
-                    FilledButton.icon(
-                      onPressed: _showPasteTranscriptDialog,
-                      icon: const Icon(Icons.paste),
-                      label: const Text('Paste Text / Notes to Analyze'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
+      return EmptyState(
+        icon: Icons.description_outlined,
+        title: 'No transcript yet',
+        body: 'Record audio, import a Zoom / WhatsApp file, or paste notes to run biomedical transcription and AI synthesis.',
+        primaryLabel: 'Paste notes to analyze',
+        onPrimary: _showPasteTranscriptDialog,
+        secondaryLabel: 'Import audio file',
+        onSecondary: () => _importAudioFileDialog(),
       );
     }
 
@@ -2564,174 +2605,117 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         : transcript;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header Action Toolbar
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
+      padding: const EdgeInsets.all(20),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 860),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
+              Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Session Transcript',
-                        style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 8),
-                      Chip(
-                        label: Text('$wordCount words • ~$estimatedMin min read'),
-                        backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                        visualDensity: VisualDensity.compact,
-                        labelStyle: const TextStyle(fontSize: 11),
-                        side: BorderSide.none,
-                      ),
-                    ],
-                  ),
-                  if (_currentSession?.transcriptSha256 != null)
-                    Text(
-                      'SHA-256: ${_currentSession!.transcriptSha256!.substring(0, 16)}... (21 CFR Part 11 Sealed)',
-                      style: TextStyle(fontSize: 11, color: Colors.indigo.shade400, fontFamily: 'monospace'),
-                    ),
-                ],
-              ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _copyTranscriptToClipboard,
-                    icon: const Icon(Icons.copy, size: 16),
-                    label: const Text('Copy'),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: _showSaveTranscriptMenu,
-                    icon: const Icon(Icons.save_alt, size: 16),
-                    label: const Text('Save Transcript'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _toggleEditTranscript,
-                    icon: Icon(_isTranscriptEditMode ? Icons.visibility : Icons.edit_note, size: 16),
-                    label: Text(_isTranscriptEditMode ? 'View' : 'Edit / Paste'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: _isTranslatingTranscript ? null : _toggleTranslateTranscript,
-                    icon: _isTranslatingTranscript
-                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.translate, size: 16),
-                    label: Text(_showTranslatedTranscript ? 'View Original' : 'Translate (हिन्दी)'),
-                    style: FilledButton.styleFrom(backgroundColor: Colors.teal),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Translation Indicator Banner
-          if (_showTranslatedTranscript && _translatedTranscript != null)
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.teal.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.teal.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.g_translate, color: Colors.teal, size: 18),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text(
-                      'प्रदर्शित: वैज्ञानिक प्रतिलेख का हिन्दी अनुवाद (Viewing Hindi Biomedical Translation)',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.teal),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => setState(() => _showTranslatedTranscript = false),
-                    child: const Text('Switch to Original (EN)', style: TextStyle(fontSize: 12)),
-                  ),
-                ],
-              ),
-            ),
-
-          // Transcript Content (Editor vs Formatted View)
-          if (_isTranscriptEditMode) ...[
-            Card(
-              elevation: 1,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text('Edit Transcript Text:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _transcriptEditController,
-                      maxLines: 14,
-                      style: const TextStyle(fontSize: 14, height: 1.5, fontFamily: 'monospace'),
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        hintText: 'Paste or edit transcript here...',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        TextButton(
-                          onPressed: () => setState(() => _isTranscriptEditMode = false),
-                          child: const Text('Cancel'),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton.icon(
-                          onPressed: _saveEditedTranscript,
-                          icon: const Icon(Icons.check, size: 16),
-                          label: const Text('Save & Re-Seal'),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton.tonalIcon(
-                          onPressed: () => _processTextDirectly(_transcriptEditController.text),
-                          icon: const Icon(Icons.auto_awesome, size: 16),
-                          label: const Text('Save & Run AI Analysis'),
+                        const Text('Session transcript', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 7,
+                          runSpacing: 7,
+                          children: [
+                            StatusPill(icon: Icons.text_snippet_outlined, label: '$wordCount words · ~$estimatedMin min', color: theme.colorScheme.primary),
+                            if (_currentSession?.transcriptSha256 != null)
+                              StatusPill(icon: Icons.verified_outlined, label: 'Sealed ${_currentSession!.transcriptSha256!.substring(0, 8)}', color: theme.colorScheme.secondary),
+                            if (_showTranslatedTranscript) StatusPill(icon: Icons.translate, label: 'Hindi view', color: theme.colorScheme.tertiary),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 12),
+                  Wrap(
+                    spacing: 7,
+                    runSpacing: 7,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      OutlinedButton.icon(onPressed: _copyTranscriptToClipboard, icon: const Icon(Icons.copy_outlined, size: 14), label: const Text('Copy')),
+                      FilledButton.tonalIcon(onPressed: _showSaveTranscriptMenu, icon: const Icon(Icons.save_alt_outlined, size: 14), label: const Text('Save')),
+                      OutlinedButton.icon(
+                        onPressed: _toggleEditTranscript,
+                        icon: Icon(_isTranscriptEditMode ? Icons.visibility_outlined : Icons.edit_note_outlined, size: 14),
+                        label: Text(_isTranscriptEditMode ? 'View' : 'Edit'),
+                      ),
+                      FilledButton.icon(
+                        onPressed: _isTranslatingTranscript ? null : _toggleTranslateTranscript,
+                        icon: _isTranslatingTranscript
+                            ? const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.translate, size: 14),
+                        label: Text(_showTranslatedTranscript ? 'Original' : 'Hindi'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ),
-          ] else ...[
-            Card(
-              elevation: 0,
-              color: theme.colorScheme.surfaceContainerLow,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: SelectableText(
-                  displayedText,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    height: 1.7,
-                    letterSpacing: 0.2,
-                    fontSize: 14.5,
+              const SizedBox(height: 14),
+              if (_showTranslatedTranscript && _translatedTranscript != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.g_translate, color: theme.colorScheme.primary, size: 17),
+                      const SizedBox(width: 8),
+                      const Expanded(child: Text('Hindi biomedical translation · gene & drug casing preserved', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                      TextButton(onPressed: () => setState(() => _showTranslatedTranscript = false), child: const Text('Original', style: TextStyle(fontSize: 12))),
+                    ],
                   ),
                 ),
-              ),
-            ),
-          ],
-        ],
+              if (_isTranscriptEditMode) ...[
+                LabCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SectionLabel('Edit transcript'),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _transcriptEditController,
+                        maxLines: 14,
+                        style: const TextStyle(fontSize: 13.5, height: 1.6, fontFamily: 'monospace'),
+                        decoration: const InputDecoration(hintText: 'Paste or edit transcript here...'),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: 8,
+                        children: [
+                          TextButton(onPressed: () => setState(() => _isTranscriptEditMode = false), child: const Text('Cancel')),
+                          FilledButton.tonalIcon(onPressed: _saveEditedTranscript, icon: const Icon(Icons.check, size: 15), label: const Text('Save & re-seal')),
+                          FilledButton.icon(onPressed: () => _processTextDirectly(_transcriptEditController.text), icon: const Icon(Icons.auto_awesome, size: 15), label: const Text('Run AI analysis')),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ] else ...[
+                LabCard(
+                  color: theme.colorScheme.surfaceContainerLowest,
+                  padding: const EdgeInsets.all(22),
+                  child: SelectableText(
+                    displayedText,
+                    style: theme.textTheme.bodyLarge?.copyWith(height: 1.75, letterSpacing: 0.15, fontSize: 14.5),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2741,235 +2725,227 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   Widget _buildSummaryTab(ThemeData theme) {
     final summary = _currentSession?.summary;
     if (summary == null) {
-      return _buildEmptyState('No scientific summary generated yet. Record or import audio and click "Process AI Tasks".');
+      final hasAudio = _recordedAudioPath != null || (_currentSession?.audioPath?.isNotEmpty == true);
+      return EmptyState(
+        icon: Icons.science_outlined,
+        title: 'No synthesis yet',
+        body: hasAudio
+            ? 'Audio is ready. Run the biomedical pipeline to extract hypothesis, findings, protocols, compounds and citations.'
+            : 'Record, import or paste a session, then synthesize hypotheses, assays and bench tasks.',
+        primaryLabel: hasAudio ? 'Synthesize with AI' : 'Paste notes to analyze',
+        onPrimary: hasAudio ? _executeAiPipeline : _showPasteTranscriptDialog,
+      );
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      padding: const EdgeInsets.all(20),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 880),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text('Scientific Executive Summary', style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-              ),
               Row(
-                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const Expanded(child: Text('Executive synthesis', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20))),
                   OutlinedButton.icon(
                     onPressed: _isTranslatingSummary ? null : _toggleTranslateSummary,
                     icon: _isTranslatingSummary
                         ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.translate, size: 14),
-                    label: Text(_showTranslatedSummary ? 'English' : 'हिन्दी (Hindi)'),
+                        : const Icon(Icons.translate, size: 13),
+                    label: Text(_showTranslatedSummary ? 'English' : 'Hindi', style: const TextStyle(fontSize: 12)),
                     style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
                   ),
                   const SizedBox(width: 8),
-                  Chip(
-                    label: Text(summary.detectedLanguage),
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                    visualDensity: VisualDensity.compact,
-                  ),
+                  StatusPill(icon: Icons.language_outlined, label: summary.detectedLanguage.split('/').first.trim(), color: theme.colorScheme.primary),
                 ],
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // 21 CFR Part 11 Cryptographic Audit Trail Card
-          if (_currentSession?.audioSha256 != null || _currentSession?.transcriptSha256 != null) ...[
-            Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.indigo.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.indigo.withOpacity(0.3)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
+              const SizedBox(height: 12),
+              if (_currentSession?.audioSha256 != null || _currentSession?.transcriptSha256 != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.secondary.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: theme.colorScheme.secondary.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.verified, size: 16, color: Colors.indigo),
-                      SizedBox(width: 6),
-                      Text(
-                        '21 CFR PART 11 FORENSIC AUDIT TRAIL',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.indigo),
+                      Row(
+                        children: [
+                          Icon(Icons.verified, size: 15, color: theme.colorScheme.secondary),
+                          const SizedBox(width: 6),
+                          Text('21 CFR PART 11 · FORENSIC SEAL', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5, letterSpacing: 1.0, color: theme.colorScheme.secondary)),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (_currentSession?.audioSha256 != null)
+                        Row(
+                          children: [
+                            const Text('Audio  ', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11)),
+                            Expanded(child: Text(_currentSession!.audioSha256!, style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis)),
+                            IconButton(
+                              icon: const Icon(Icons.copy_outlined, size: 14),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: _currentSession!.audioSha256!));
+                                _showSnackBar('Audio SHA-256 copied');
+                              },
+                            ),
+                          ],
+                        ),
+                      if (_currentSession?.transcriptSha256 != null)
+                        Row(
+                          children: [
+                            const Text('Transcript  ', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11)),
+                            Expanded(child: Text(_currentSession!.transcriptSha256!, style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis)),
+                            IconButton(
+                              icon: const Icon(Icons.copy_outlined, size: 14),
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: _currentSession!.transcriptSha256!));
+                                _showSnackBar('Transcript SHA-256 copied');
+                              },
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              if (summary.scientificHypothesis.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.all(15),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(borderRadius: BorderRadius.circular(11), color: theme.colorScheme.primary.withValues(alpha: 0.15)),
+                        child: Icon(Icons.lightbulb_outline, color: theme.colorScheme.primary, size: 18),
+                      ),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('HYPOTHESIS', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10.5, letterSpacing: 1.1, color: theme.colorScheme.primary)),
+                            const SizedBox(height: 4),
+                            Text(summary.scientificHypothesis, style: const TextStyle(fontSize: 13.5, height: 1.5)),
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  if (_currentSession?.audioSha256 != null)
-                    Row(
-                      children: [
-                        const Text('Audio SHA-256: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                        Expanded(
-                          child: Text(
-                            _currentSession!.audioSha256!,
-                            style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.copy, size: 14),
-                          tooltip: 'Copy Audio SHA-256',
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: _currentSession!.audioSha256!));
-                            _showSnackBar('Audio SHA-256 copied to clipboard');
-                          },
-                        ),
-                      ],
-                    ),
-                  if (_currentSession?.transcriptSha256 != null)
-                    Row(
-                      children: [
-                        const Text('Transcript SHA-256: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                        Expanded(
-                          child: Text(
-                            _currentSession!.transcriptSha256!,
-                            style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.copy, size: 14),
-                          tooltip: 'Copy Transcript SHA-256',
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: _currentSession!.transcriptSha256!));
-                            _showSnackBar('Transcript SHA-256 copied to clipboard');
-                          },
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-            ),
-          ],
-
-          if (summary.scientificHypothesis.isNotEmpty) ...[
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.teal.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.teal.withOpacity(0.3)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.lightbulb_outline, color: Colors.teal, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('HYPOTHESIS / RATIONALE', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.teal)),
-                        const SizedBox(height: 4),
-                        Text(summary.scientificHypothesis, style: const TextStyle(fontSize: 13, height: 1.4)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-          Text(summary.executiveSummary, style: theme.textTheme.bodyLarge?.copyWith(height: 1.5)),
-          const SizedBox(height: 24),
-          const Divider(),
-          const SizedBox(height: 12),
-          Text('Key Experimental Findings & Observations', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          ...summary.keyPoints.map((point) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.check_circle_outline, size: 18, color: Colors.teal),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(point)),
-                  ],
                 ),
-              )),
-          const SizedBox(height: 20),
-          Text('Protocol & Consensus Decisions', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          ...summary.decisionsMade.map((decision) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.gavel, size: 18, color: Colors.blueAccent),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(decision)),
-                  ],
-                ),
-              )),
-
-          // Live In-Meeting Annotations & Bookmarks
-          if (_currentSession?.liveNotes.isNotEmpty == true) ...[
-            const SizedBox(height: 24),
-            const Divider(),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Icon(Icons.bookmark, color: Colors.orange, size: 20),
-                const SizedBox(width: 8),
-                Text('Live In-Meeting Annotations (${_currentSession!.liveNotes.length})',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
               ],
-            ),
-            const SizedBox(height: 8),
-            ..._currentSession!.liveNotes.map((note) => Card(
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  color: Colors.orange.withOpacity(0.06),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  child: ListTile(
-                    dense: true,
-                    leading: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        _formatDuration(note.timestampSeconds),
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.deepOrange),
+              LabCard(
+                padding: const EdgeInsets.all(18),
+                child: Text(
+                  (_showTranslatedSummary && _translatedSummary != null) ? _translatedSummary! : summary.executiveSummary,
+                  style: theme.textTheme.bodyLarge?.copyWith(height: 1.6),
+                ),
+              ),
+              const SizedBox(height: 18),
+              SectionLabel('Key findings', icon: Icons.query_stats_outlined),
+              const SizedBox(height: 8),
+              ...summary.keyPoints.map((point) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: LabCard(
+                      padding: const EdgeInsets.all(13),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.check_circle_outline, size: 18, color: theme.colorScheme.primary),
+                          const SizedBox(width: 10),
+                          Expanded(child: Text(point, style: const TextStyle(fontSize: 13.2, height: 1.5))),
+                        ],
                       ),
                     ),
-                    title: Text(note.note, style: const TextStyle(fontSize: 13)),
-                  ),
-                )),
-          ],
-
-          // Attached Figures with In-App Lightbox Zoom
-          if (_currentSession?.slideAttachments.isNotEmpty == true) ...[
-            const SizedBox(height: 24),
-            const Divider(),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Icon(Icons.image, color: Colors.teal, size: 20),
-                const SizedBox(width: 8),
-                Text('Attached Figures & Slides (Tap to Zoom In-App)',
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                  )),
+              const SizedBox(height: 12),
+              SectionLabel('Protocol decisions', icon: Icons.gavel_outlined),
+              const SizedBox(height: 8),
+              ...summary.decisionsMade.map((decision) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: LabCard(
+                      padding: const EdgeInsets.all(13),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.gavel_outlined, size: 17, color: theme.colorScheme.secondary),
+                          const SizedBox(width: 10),
+                          Expanded(child: Text(decision, style: const TextStyle(fontSize: 13.2, height: 1.5))),
+                        ],
+                      ),
+                    ),
+                  )),
+              if (_currentSession?.liveNotes.isNotEmpty == true) ...[
+                const SizedBox(height: 12),
+                SectionLabel('Live annotations · ${_currentSession!.liveNotes.length}', icon: Icons.bookmark_outline),
+                const SizedBox(height: 8),
+                ..._currentSession!.liveNotes.map((note) => Padding(
+                      padding: const EdgeInsets.only(bottom: 7),
+                      child: LabCard(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(color: theme.colorScheme.tertiary.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(8)),
+                              child: Text(formatMS(note.timestampSeconds), style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: theme.colorScheme.tertiary, fontFeatures: const [FontFeature.tabularFigures()])),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text(note.note, style: const TextStyle(fontSize: 13))),
+                          ],
+                        ),
+                      ),
+                    )),
               ],
-            ),
-            const SizedBox(height: 8),
-            ..._currentSession!.slideAttachments.map((slide) => Card(
-                  margin: const EdgeInsets.symmetric(vertical: 4),
-                  child: ListTile(
-                    leading: const Icon(Icons.zoom_in, color: Colors.teal),
-                    title: Text(slide.caption, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('Logged at: ${_formatDuration(slide.timestampSeconds)} (Tap to inspect figure)'),
-                    onTap: () => _showFigureLightbox(slide),
-                  ),
-                )),
-          ],
-        ],
+              if (_currentSession?.slideAttachments.isNotEmpty == true) ...[
+                const SizedBox(height: 12),
+                SectionLabel('Figures · tap to inspect', icon: Icons.image_outlined),
+                const SizedBox(height: 8),
+                ..._currentSession!.slideAttachments.map((slide) => Padding(
+                      padding: const EdgeInsets.only(bottom: 7),
+                      child: LabCard(
+                        onTap: () => _showFigureLightbox(slide),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: theme.colorScheme.primary.withValues(alpha: 0.12)),
+                              child: Icon(Icons.zoom_in, color: theme.colorScheme.primary, size: 18),
+                            ),
+                            const SizedBox(width: 11),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(slide.caption, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                                  Text('Logged at ${formatHMS(slide.timestampSeconds)}', style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline)),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right, size: 18),
+                          ],
+                        ),
+                      ),
+                    )),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2979,83 +2955,113 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   Widget _buildTasksTab(ThemeData theme) {
     final tasks = _currentSession?.actionItems ?? [];
     if (tasks.isEmpty) {
-      return _buildEmptyState('No protocol tasks or action items extracted yet.');
+      return const EmptyState(
+        icon: Icons.fact_check_outlined,
+        title: 'No bench tasks yet',
+        body: 'Run AI synthesis to extract assays, reagent orders, IRB steps and manuscript tasks with owners and priorities.',
+      );
+    }
+
+    final done = tasks.where((e) => e.isCompleted).length;
+    Color prioColor(String p) {
+      if (p.toLowerCase() == 'high') return theme.colorScheme.error;
+      if (p.toLowerCase() == 'medium') return theme.colorScheme.tertiary;
+      return theme.colorScheme.secondary;
     }
 
     return ListView.separated(
       padding: const EdgeInsets.all(20),
-      itemCount: tasks.length,
+      itemCount: tasks.length + 1,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
-        final item = tasks[index];
-        return Card(
-          elevation: 1,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: CheckboxListTile(
-            value: item.isCompleted,
-            onChanged: (val) {
-              setState(() {
-                item.isCompleted = val ?? false;
-              });
-              if (_currentSession != null) {
-                SessionRepository().saveSession(_currentSession!);
-              }
-            },
-            title: Text(
-              item.task,
-              style: TextStyle(
-                decoration: item.isCompleted ? TextDecoration.lineThrough : null,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(
+        if (index == 0) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.teal.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      item.category,
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.teal),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Icon(Icons.person, size: 14, color: theme.colorScheme.primary),
-                  const SizedBox(width: 4),
-                  Text(item.assignee, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12)),
-                  if (item.speaker != null) ...[
-                    const SizedBox(width: 8),
-                    Text('(by ${item.speaker})', style: const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey)),
-                  ],
-                  const SizedBox(width: 12),
-                  if (item.deadline != null) ...[
-                    const Icon(Icons.calendar_today, size: 12, color: Colors.orange),
-                    const SizedBox(width: 4),
-                    Text(item.deadline!, style: const TextStyle(color: Colors.orange, fontSize: 11)),
-                  ],
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: item.priority == 'High' ? Colors.red.withOpacity(0.1) : Colors.blue.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      item.priority,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: item.priority == 'High' ? Colors.red : Colors.blue,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
+                  const Expanded(child: Text('Bench protocols', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 19))),
+                  StatusPill(icon: Icons.task_alt_outlined, label: '$done/${tasks.length} done', color: theme.colorScheme.primary),
                 ],
               ),
-            ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: LinearProgressIndicator(value: tasks.isEmpty ? 0 : done / tasks.length, minHeight: 6),
+              ),
+              const SizedBox(height: 6),
+            ],
+          );
+        }
+        final item = tasks[index - 1];
+        final pc = prioColor(item.priority);
+        return LabCard(
+          padding: const EdgeInsets.all(13),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Checkbox(
+                value: item.isCompleted,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                onChanged: (val) {
+                  setState(() {
+                    item.isCompleted = val ?? false;
+                  });
+                  if (_currentSession != null) {
+                    SessionRepository().saveSession(_currentSession!);
+                  }
+                },
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.task,
+                      style: TextStyle(
+                        decoration: item.isCompleted ? TextDecoration.lineThrough : null,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13.5,
+                        height: 1.4,
+                        color: item.isCompleted ? theme.colorScheme.outline : theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        StatusPill(icon: Icons.science_outlined, label: item.category, color: theme.colorScheme.primary),
+                        StatusPill(icon: Icons.flag_outlined, label: item.priority, color: pc),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircleAvatar(
+                              radius: 10,
+                              backgroundColor: theme.colorScheme.secondaryContainer,
+                              child: Text(item.assignee.isNotEmpty ? item.assignee[0].toUpperCase() : '?', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800)),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(item.assignee, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                          ],
+                        ),
+                        if (item.speaker != null) Text('by ${item.speaker}', style: const TextStyle(fontSize: 11.5, fontStyle: FontStyle.italic, color: Colors.grey)),
+                        if (item.deadline != null)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.calendar_today_outlined, size: 12, color: Colors.orange),
+                              const SizedBox(width: 4),
+                              Text(item.deadline!, style: const TextStyle(color: Colors.orange, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -3066,14 +3072,14 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   Color _getSpeakerColor(String speakerId) {
     final colors = [
-      Colors.teal,
-      Colors.indigo,
-      Colors.deepOrange,
-      Colors.purple,
-      Colors.green,
-      Colors.blueGrey,
-      Colors.amber.shade800,
-      Colors.deepPurple,
+      const Color(0xFF0A7C6B),
+      const Color(0xFF3B5BFF),
+      const Color(0xFFC2410C),
+      const Color(0xFF7C3AED),
+      const Color(0xFF15803D),
+      const Color(0xFF475569),
+      const Color(0xFFB77900),
+      const Color(0xFF6D28D9),
     ];
     final hash = speakerId.hashCode.abs();
     return colors[hash % colors.length];
@@ -3104,7 +3110,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       builder: (ctx) => AlertDialog(
         title: const Row(
           children: [
-            Icon(Icons.record_voice_over, color: Colors.teal),
+            Icon(Icons.record_voice_over_outlined, color: Color(0xFF0A7C6B)),
             SizedBox(width: 8),
             Text('Identify Speaker'),
           ],
@@ -3124,8 +3130,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               decoration: const InputDecoration(
                 labelText: 'Speaker Name & Role',
                 hintText: 'e.g. Dr. Rao (Lead PI) or Elena (Postdoc)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.person),
+                prefixIcon: Icon(Icons.person_outline),
               ),
             ),
           ],
@@ -3160,7 +3165,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       builder: (ctx) => AlertDialog(
         title: const Row(
           children: [
-            Icon(Icons.video_call, color: Colors.blueAccent),
+            Icon(Icons.video_call_outlined, color: Color(0xFF3B5BFF)),
             SizedBox(width: 8),
             Text('Virtual Call Audio Capture'),
           ],
@@ -3175,7 +3180,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 style: TextStyle(fontSize: 13),
               ),
               SizedBox(height: 16),
-              Text('1. Zoom Meetings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueAccent)),
+              Text('1. Zoom Meetings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF3B5BFF))),
               SizedBox(height: 4),
               Text(
                 '• Option A (File Import): In Zoom Settings > Recording, turn on "Record audio-only file". After your call, click "Import Audio" and select the audio_only.m4a file from your Zoom folder.\n• Option B (Live Capture): Select your system "Monitor / Loopback" audio device in the microphone dropdown to capture both your voice and remote participants directly.',
@@ -3211,154 +3216,116 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   Widget _buildSpeakersTab(ThemeData theme) {
     final turns = _currentSession?.speakerTurns ?? [];
     if (turns.isEmpty) {
-      return _buildEmptyState('No speaker diarization turns available yet. Click "Process AI Tasks & Insights" to generate multi-speaker turns.');
+      return EmptyState(
+        icon: Icons.record_voice_over_outlined,
+        title: 'No diarization yet',
+        body: 'Run AI synthesis to segment who said what, rename speakers once, and tap any turn to seek audio.',
+        primaryLabel: 'Generate speaker turns',
+        onPrimary: (_recordedAudioPath != null || (_currentSession?.transcript.isNotEmpty == true)) ? _executeAiPipeline : null,
+      );
     }
 
     final uniqueSpeakers = turns.map((t) => t.speakerName).toSet().toList();
 
     return Column(
       children: [
-        // Summary Header Strip
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-            border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5))),
+            color: theme.colorScheme.surface,
+            border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
           ),
           child: Row(
             children: [
-              const Icon(Icons.people_alt_outlined, size: 20, color: Colors.teal),
+              Icon(Icons.people_alt_outlined, size: 18, color: theme.colorScheme.primary),
               const SizedBox(width: 8),
-              Text(
-                '${uniqueSpeakers.length} Speakers Identified',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '(${turns.length} Dialog Turns)',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
+              Text('${uniqueSpeakers.length} speakers', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+              Text(' · ${turns.length} turns', style: TextStyle(fontSize: 12, color: theme.colorScheme.outline)),
               if (_currentSession?.isVirtualCall == true) ...[
-                const SizedBox(width: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.blue.withOpacity(0.4)),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.video_call, size: 14, color: Colors.blue),
-                      SizedBox(width: 4),
-                      Text('Virtual Call Mode', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue)),
-                    ],
-                  ),
-                ),
+                const SizedBox(width: 10),
+                StatusPill(icon: Icons.video_call_outlined, label: 'Virtual call', color: theme.colorScheme.secondary),
               ],
               const Spacer(),
-              Text(
-                'Tap speaker to rename',
-                style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey.shade600),
-              ),
+              Text('Tap name to rename', style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: theme.colorScheme.outline)),
             ],
           ),
         ),
-
-        // Chronological List of Speaker Turns
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.all(20),
             itemCount: turns.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
               final turn = turns[index];
               final speakerColor = _getSpeakerColor(turn.speakerId);
-              final startMin = (turn.startSeconds ~/ 60).toString().padLeft(2, '0');
-              final startSec = (turn.startSeconds % 60).toString().padLeft(2, '0');
-              final endMin = (turn.endSeconds ~/ 60).toString().padLeft(2, '0');
-              final endSec = (turn.endSeconds % 60).toString().padLeft(2, '0');
-
-              return Card(
-                elevation: 1,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  side: BorderSide(color: speakerColor.withOpacity(0.3), width: 1),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 14,
-                            backgroundColor: speakerColor.withOpacity(0.2),
-                            child: Text(
-                              turn.speakerName.isNotEmpty ? turn.speakerName[0].toUpperCase() : 'S',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: speakerColor),
-                            ),
+              return LabCard(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: speakerColor.withValues(alpha: 0.15),
+                          child: Text(
+                            turn.speakerName.isNotEmpty ? turn.speakerName[0].toUpperCase() : 'S',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: speakerColor),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: InkWell(
-                              onTap: () => _showRenameSpeakerDialog(turn.speakerId, turn.speakerName),
-                              borderRadius: BorderRadius.circular(6),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-                                child: Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        turn.speakerName,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                          color: speakerColor,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Icon(Icons.edit_outlined, size: 13, color: speakerColor.withOpacity(0.7)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          InkWell(
-                            onTap: () => _seekAudio(turn.startSeconds),
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: InkWell(
+                            onTap: () => _showRenameSpeakerDialog(turn.speakerId, turn.speakerName),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
                               child: Row(
-                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.play_circle_outline, size: 14, color: Colors.blueAccent),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '$startMin:$startSec - $endMin:$endSec',
-                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                  Flexible(
+                                    child: Text(
+                                      turn.speakerName,
+                                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: speakerColor),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
+                                  const SizedBox(width: 5),
+                                  Icon(Icons.edit_outlined, size: 13, color: speakerColor.withValues(alpha: 0.7)),
                                 ],
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        turn.text,
-                        style: const TextStyle(fontSize: 13, height: 1.4),
-                      ),
-                    ],
-                  ),
+                        ),
+                        InkWell(
+                          onTap: () => _seekAudio(turn.startSeconds),
+                          borderRadius: BorderRadius.circular(99),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                              borderRadius: BorderRadius.circular(99),
+                              border: Border.all(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.play_circle_outline, size: 13, color: Color(0xFF3B5BFF)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${formatMS(turn.startSeconds)}–${formatMS(turn.endSeconds)}',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()]),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Container(width: 28, height: 3, decoration: BoxDecoration(borderRadius: BorderRadius.circular(3), color: speakerColor.withValues(alpha: 0.5))),
+                    const SizedBox(height: 8),
+                    Text(turn.text, style: const TextStyle(fontSize: 13.2, height: 1.55)),
+                  ],
                 ),
               );
             },
@@ -3370,128 +3337,106 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   // --- Intelligence Tab 4: Bio/Chem Glossary & Self-Reliant Search ---
 
+  Widget _searchBar(ThemeData theme, TextEditingController controller, String hint, bool loading, VoidCallback onSearch, VoidCallback onClear) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onSubmitted: (_) => onSearch(),
+              onChanged: (_) { if (mounted) setState(() {}); },
+              decoration: InputDecoration(
+                hintText: hint,
+                prefixIcon: const Icon(Icons.search, size: 18),
+                suffixIcon: controller.text.isNotEmpty
+                    ? IconButton(icon: const Icon(Icons.clear, size: 16), onPressed: onClear)
+                    : null,
+                isDense: true,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton.icon(
+            onPressed: loading ? null : onSearch,
+            icon: loading
+                ? const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.science_outlined, size: 15),
+            label: const Text('Lookup'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGlossaryTab(ThemeData theme) {
     final rawTerms = _currentSession?.glossaryTerms ?? [];
     final terms = _searchResultsPubChem.isNotEmpty ? _searchResultsPubChem : rawTerms;
 
     return Column(
       children: [
-        // In-App On-Demand Scientific Search Bar (Zero External Browser Needed)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _pubchemSearchController,
-                  onSubmitted: _searchPubChemOnDemand,
-                  decoration: InputDecoration(
-                    hintText: 'Search PubChem compound or offline atlas (e.g. Osimertinib, Cisplatin, KRAS)...',
-                    prefixIcon: const Icon(Icons.search, size: 18),
-                    suffixIcon: _pubchemSearchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 16),
-                            onPressed: () {
-                              _pubchemSearchController.clear();
-                              setState(() {
-                                _searchResultsPubChem.clear();
-                              });
-                            },
-                          )
-                        : null,
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: _isSearchingPubchem
-                    ? null
-                    : () => _searchPubChemOnDemand(_pubchemSearchController.text),
-                icon: _isSearchingPubchem
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.science, size: 16),
-                label: const Text('Lookup'),
-              ),
-            ],
-          ),
+        _searchBar(
+          theme,
+          _pubchemSearchController,
+          'Compound, gene or assay · e.g. Osimertinib, KRAS…',
+          _isSearchingPubchem,
+          () => _searchPubChemOnDemand(_pubchemSearchController.text),
+          () {
+            _pubchemSearchController.clear();
+            setState(() => _searchResultsPubChem.clear());
+          },
         ),
-
-        // Terms List
         Expanded(
           child: terms.isEmpty
-              ? _buildEmptyState(
-                  'Bio & Chemical Glossary powered by NIH PubChem & Offline Scientific Atlas.\nSearch any drug, compound, gene, or assay above, or run AI processing on a recording.',
+              ? const EmptyState(
+                  icon: Icons.medication_liquid_outlined,
+                  title: 'Compound atlas',
+                  body: 'Search NIH PubChem or the offline atlas above — or run AI synthesis to auto-extract drugs, genes and assays.',
                 )
               : ListView.separated(
                   padding: const EdgeInsets.all(20),
                   itemCount: terms.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final term = terms[index];
                     final isPubChem = term.source == 'PubChem';
-
-                    return Card(
-                      elevation: 1,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
+                    return LabCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
                                   term.word.toUpperCase(),
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: isPubChem ? Colors.teal : theme.colorScheme.primary,
-                                  ),
+                                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: isPubChem ? theme.colorScheme.primary : theme.colorScheme.onSurface),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(width: 8),
-                                if (term.phonetic.isNotEmpty)
-                                  Text(term.phonetic, style: TextStyle(color: theme.colorScheme.outline, fontStyle: FontStyle.italic, fontSize: 12)),
-                                const Spacer(),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: isPubChem ? Colors.teal.withOpacity(0.15) : theme.colorScheme.secondaryContainer,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: isPubChem ? Border.all(color: Colors.teal.withOpacity(0.4)) : null,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (isPubChem) ...[
-                                        const Icon(Icons.science_outlined, size: 12, color: Colors.teal),
-                                        const SizedBox(width: 4),
-                                      ],
-                                      Text(
-                                        isPubChem ? 'NIH PubChem' : (term.partOfSpeech.isNotEmpty ? term.partOfSpeech : 'BioKnowledge'),
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: isPubChem ? Colors.teal : theme.colorScheme.onSecondaryContainer,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(term.definition, style: theme.textTheme.bodyMedium?.copyWith(height: 1.4)),
-                            if (term.example != null) ...[
-                              const SizedBox(height: 6),
-                              Text(
-                                term.example!,
-                                style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic, color: Colors.grey[600]),
+                              ),
+                              StatusPill(
+                                icon: isPubChem ? Icons.science_outlined : Icons.menu_book_outlined,
+                                label: isPubChem ? 'NIH PubChem' : (term.partOfSpeech.isNotEmpty ? term.partOfSpeech : 'Atlas'),
+                                color: isPubChem ? theme.colorScheme.primary : theme.colorScheme.secondary,
                               ),
                             ],
+                          ),
+                          if (term.phonetic.isNotEmpty) Text(term.phonetic, style: TextStyle(color: theme.colorScheme.outline, fontStyle: FontStyle.italic, fontSize: 12)),
+                          const SizedBox(height: 8),
+                          Text(term.definition, style: theme.textTheme.bodyMedium?.copyWith(height: 1.5)),
+                          if (term.example != null) ...[
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerLow, borderRadius: BorderRadius.circular(12)),
+                              child: Text(term.example!, style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic, height: 1.45)),
+                            ),
                           ],
-                        ),
+                        ],
                       ),
                     );
                   },
@@ -3509,126 +3454,60 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
     return Column(
       children: [
-        // In-App On-Demand PubMed Literature Search Bar (Zero External Browser Needed)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _pubmedSearchController,
-                  onSubmitted: _searchPubMedOnDemand,
-                  decoration: InputDecoration(
-                    hintText: 'Search PubMed for papers, trials, or PMID (e.g. KRAS G12C, Osimertinib, 33208354)...',
-                    prefixIcon: const Icon(Icons.search, size: 18),
-                    suffixIcon: _pubmedSearchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 16),
-                            onPressed: () {
-                              _pubmedSearchController.clear();
-                              setState(() {
-                                _searchResultsPubMed.clear();
-                              });
-                            },
-                          )
-                        : null,
-                    isDense: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: _isSearchingPubmed
-                    ? null
-                    : () => _searchPubMedOnDemand(_pubmedSearchController.text),
-                icon: _isSearchingPubmed
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.menu_book, size: 16),
-                label: const Text('Search'),
-              ),
-            ],
-          ),
+        _searchBar(
+          theme,
+          _pubmedSearchController,
+          'Paper, trial or PMID · e.g. KRAS G12C, 33208354…',
+          _isSearchingPubmed,
+          () => _searchPubMedOnDemand(_pubmedSearchController.text),
+          () {
+            _pubmedSearchController.clear();
+            setState(() => _searchResultsPubMed.clear());
+          },
         ),
-
-        // Citations List
         Expanded(
           child: citations.isEmpty
-              ? _buildEmptyState(
-                  'Scientific Literature & Citations powered by NCBI PubMed.\nSearch any clinical trial, mechanism, or PMID above, or run AI processing on a session.',
+              ? const EmptyState(
+                  icon: Icons.library_books_outlined,
+                  title: 'Literature shelf',
+                  body: 'Search NCBI PubMed above for trials and mechanisms — or run AI synthesis to auto-resolve citations.',
                 )
               : ListView.separated(
                   padding: const EdgeInsets.all(20),
                   itemCount: citations.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final cite = citations[index];
-                    return Card(
-                      elevation: 1,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () => _showArticleReader(cite),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
+                    return LabCard(
+                      onTap: () => _showArticleReader(cite),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              Expanded(child: Text(cite.title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, height: 1.45))),
+                              const SizedBox(width: 10),
+                              StatusPill(icon: Icons.tag_outlined, label: cite.pmid, color: theme.colorScheme.secondary),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(cite.authors, style: theme.textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic)),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(child: Text('${cite.journal} (${cite.pubYear})${cite.doi != null ? ' · DOI ${cite.doi}' : ''}', style: TextStyle(color: theme.colorScheme.outline, fontSize: 12))),
                               Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Expanded(
-                                    child: Text(
-                                      cite.title,
-                                      style: theme.textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: theme.colorScheme.onSurface,
-                                      ),
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      'PMID: ${cite.pmid}',
-                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                cite.authors,
-                                style: theme.textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic, color: Colors.grey[800]),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  Text(
-                                    '${cite.journal} (${cite.pubYear})',
-                                    style: TextStyle(color: theme.colorScheme.outline, fontSize: 12),
-                                  ),
-                                  if (cite.doi != null) ...[
-                                    const SizedBox(width: 8),
-                                    Text('• DOI: ${cite.doi}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                  ],
-                                  const Spacer(),
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.chrome_reader_mode, size: 14, color: Colors.teal),
-                                      const SizedBox(width: 4),
-                                      Text('Read In-App', style: TextStyle(fontSize: 11, color: Colors.teal[700], fontWeight: FontWeight.bold)),
-                                    ],
-                                  ),
+                                  Icon(Icons.chrome_reader_mode_outlined, size: 14, color: theme.colorScheme.primary),
+                                  const SizedBox(width: 4),
+                                  Text('Read', style: TextStyle(fontSize: 11.5, color: theme.colorScheme.primary, fontWeight: FontWeight.w800)),
                                 ],
                               ),
                             ],
                           ),
-                        ),
+                        ],
                       ),
                     );
                   },
@@ -3642,50 +3521,127 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   Widget _buildChatTab(ThemeData theme) {
     final history = _currentSession?.chatHistory ?? [];
+    final hasTranscript = _currentSession?.transcript.isNotEmpty == true;
+
+    void suggest(String q) {
+      if (!hasTranscript) {
+        _showSnackBar('Add a transcript first — paste notes or process audio.');
+        return;
+      }
+      _chatController.text = q;
+      _sendChatMessage();
+    }
 
     return Column(
       children: [
-        Expanded(
-          child: history.isEmpty
-              ? _buildEmptyState(
-                  'Ask scientific questions about this session or lab meeting.\nExample: "What was the statistical significance and dose of Osimertinib used?"',
-                )
-              : ListView.builder(
-                  controller: _chatScrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: history.length,
-                  itemBuilder: (context, index) {
-                    final msg = history[index];
-                    final isUser = msg.sender == 'user';
-                    return Align(
-                      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(vertical: 6),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.65),
-                        decoration: BoxDecoration(
-                          color: isUser ? theme.colorScheme.primary : theme.colorScheme.surfaceVariant,
-                          borderRadius: BorderRadius.circular(16),
+        if (history.isEmpty)
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 12),
+                      Container(
+                        width: 66,
+                        height: 66,
+                        decoration: BoxDecoration(shape: BoxShape.circle, color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5), border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.3))),
+                        child: Icon(Icons.forum_outlined, size: 28, color: theme.colorScheme.primary),
+                      ),
+                      const SizedBox(height: 14),
+                      const Text('Grounded research Q&A', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
+                      const SizedBox(height: 6),
+                      Text(
+                        hasTranscript ? 'Ask about doses, controls, p-values or mechanisms — answers stay grounded in this session.' : 'Paste or transcribe a session first, then interrogate it with strict context grounding.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 13, color: theme.colorScheme.outline, height: 1.5),
+                      ),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          ActionChip(label: const Text('Resistance mechanism?'), onPressed: () => suggest('What resistance mechanism was discussed?')),
+                          ActionChip(label: const Text('Dose & p-value?'), onPressed: () => suggest('What dose and statistical significance were reported?')),
+                          ActionChip(label: const Text('List action items'), onPressed: () => suggest('List all bench action items and owners')),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: ListView.builder(
+              controller: _chatScrollController,
+              padding: const EdgeInsets.all(16),
+              itemCount: history.length,
+              itemBuilder: (context, index) {
+                final msg = history[index];
+                final isUser = msg.sender == 'user';
+                return Align(
+                  alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!isUser) ...[
+                        Container(
+                          width: 28,
+                          height: 28,
+                          margin: const EdgeInsets.only(right: 8, top: 4),
+                          decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [theme.colorScheme.primary, theme.colorScheme.secondary])),
+                          child: Icon(Icons.biotech, size: 14, color: theme.colorScheme.onPrimary),
                         ),
-                        child: Text(
-                          msg.text,
-                          style: TextStyle(color: isUser ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface),
+                      ],
+                      Flexible(
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(vertical: 5),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
+                          decoration: BoxDecoration(
+                            color: isUser ? theme.colorScheme.primary : theme.colorScheme.surfaceContainerLow,
+                            borderRadius: BorderRadius.only(
+                              topLeft: const Radius.circular(16),
+                              topRight: const Radius.circular(16),
+                              bottomLeft: Radius.circular(isUser ? 16 : 5),
+                              bottomRight: Radius.circular(isUser ? 5 : 16),
+                            ),
+                            border: isUser ? null : Border.all(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6)),
+                          ),
+                          child: Text(
+                            msg.text,
+                            style: TextStyle(fontSize: 13.2, height: 1.5, color: isUser ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface),
+                          ),
                         ),
                       ),
-                    );
-                  },
-                ),
-        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
         if (_isWaitingForAiChatResponse)
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: CircularProgressIndicator(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: Row(
+              children: [
+                SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary)),
+                const SizedBox(width: 8),
+                Text('Synthesizing grounded answer…', style: TextStyle(fontSize: 12, color: theme.colorScheme.outline)),
+              ],
+            ),
           ),
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
           decoration: BoxDecoration(
             color: theme.colorScheme.surface,
-            border: Border(top: BorderSide(color: theme.colorScheme.outlineVariant)),
+            border: Border(top: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
           ),
           child: Row(
             children: [
@@ -3693,16 +3649,16 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 child: TextField(
                   controller: _chatController,
                   onSubmitted: (_) => _sendChatMessage(),
-                  decoration: const InputDecoration(
-                    hintText: 'Ask about protocols, controls, p-values, or gene targets...',
-                    border: InputBorder.none,
-                  ),
+                  minLines: 1,
+                  maxLines: 4,
+                  decoration: const InputDecoration(hintText: 'Ask about protocols, controls, p-values…'),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.send),
+              const SizedBox(width: 8),
+              FilledButton(
                 onPressed: _sendChatMessage,
-                color: theme.colorScheme.primary,
+                style: FilledButton.styleFrom(shape: const CircleBorder(), padding: const EdgeInsets.all(12), minimumSize: const Size(44, 44)),
+                child: const Icon(Icons.arrow_upward, size: 18),
               ),
             ],
           ),
@@ -3712,22 +3668,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   Widget _buildEmptyState(String message) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.science_outlined, size: 56, color: Colors.grey),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.grey, fontSize: 13),
-            ),
-          ],
-        ),
-      ),
-    );
+    final parts = message.split('\n');
+    final title = parts.first;
+    final body = parts.length > 1 ? parts.sublist(1).join('\n') : '';
+    return EmptyState(icon: Icons.science_outlined, title: title, body: body.isEmpty ? 'Run AI synthesis to populate this dashboard.' : body);
   }
 }

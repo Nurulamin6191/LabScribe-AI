@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/session_repository.dart';
 import '../../../models/meeting_session.dart';
+import '../../../core/widgets/labscribe_ui.dart';
 
 /// Historical session browser with real-time scientific search,
 /// metadata badges (HIPAA, 21 CFR Part 11 cryptographic seal, citations),
@@ -34,6 +35,7 @@ class _HistoryViewState extends State<HistoryView> {
 
   Future<void> _loadSessions() async {
     final sessions = await SessionRepository().loadAllSessions();
+    if (!mounted) return;
     setState(() {
       _allSessions = sessions;
       _filteredSessions = sessions;
@@ -63,41 +65,36 @@ class _HistoryViewState extends State<HistoryView> {
     _loadSessions();
   }
 
-  String _formatDuration(int seconds) {
-    final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
-    final secs = (seconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$secs';
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Scientific Session Archive'),
+        title: const Row(
+          children: [
+            BrandMark(size: 30),
+            SizedBox(width: 10),
+            Text('Session archive'),
+          ],
+        ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(60),
+          preferredSize: const Size.fromHeight(64),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: TextField(
               controller: _searchController,
+              onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                hintText: 'Search by title, hypothesis, gene, or date...',
-                prefixIcon: const Icon(Icons.search),
+                hintText: 'Search title, hypothesis, gene, PMID or date…',
+                prefixIcon: const Icon(Icons.search, size: 18),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18),
+                        icon: const Icon(Icons.clear, size: 17),
                         onPressed: () => _searchController.clear(),
                       )
                     : null,
-                filled: true,
-                fillColor: theme.colorScheme.surfaceVariant.withOpacity(0.5),
                 isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
               ),
             ),
           ),
@@ -106,25 +103,17 @@ class _HistoryViewState extends State<HistoryView> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _filteredSessions.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.archive_outlined, size: 48, color: Colors.grey),
-                      const SizedBox(height: 12),
-                      Text(
-                        _searchController.text.isNotEmpty
-                            ? 'No sessions matching "${_searchController.text}".'
-                            : 'No saved scientific sessions in local archive.',
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-                    ],
-                  ),
+              ? EmptyState(
+                  icon: Icons.archive_outlined,
+                  title: _searchController.text.isNotEmpty
+                      ? 'No matches for "${_searchController.text}"'
+                      : 'Archive is empty',
+                  body: 'Saved sessions appear here with HIPAA and 21 CFR seals, citations and speaker turns.',
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(16),
                   itemCount: _filteredSessions.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final session = _filteredSessions[index];
                     return Dismissible(
@@ -132,17 +121,17 @@ class _HistoryViewState extends State<HistoryView> {
                       direction: DismissDirection.endToStart,
                       background: Container(
                         decoration: BoxDecoration(
-                          color: Colors.redAccent,
-                          borderRadius: BorderRadius.circular(12),
+                          color: theme.colorScheme.error,
+                          borderRadius: BorderRadius.circular(20),
                         ),
                         alignment: Alignment.centerRight,
                         padding: const EdgeInsets.only(right: 20),
                         child: const Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Text('Delete', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            Text('Delete', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
                             SizedBox(width: 8),
-                            Icon(Icons.delete, color: Colors.white),
+                            Icon(Icons.delete_outline, color: Colors.white),
                           ],
                         ),
                       ),
@@ -152,104 +141,73 @@ class _HistoryViewState extends State<HistoryView> {
                           SnackBar(content: Text('Deleted "${session.title}"')),
                         );
                       },
-                      child: Card(
-                        elevation: 1,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () => Navigator.pop(context, session),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                      child: LabCard(
+                        onTap: () => Navigator.pop(context, session),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
                               children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
+                                Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                                  ),
+                                  child: Icon(
+                                    session.isVirtualCall ? Icons.video_call_outlined : Icons.science_outlined,
+                                    size: 18,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 11),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
                                         session.title,
-                                        style: theme.textTheme.titleMedium?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
                                         overflow: TextOverflow.ellipsis,
                                       ),
-                                    ),
-                                    Text(
-                                      _formatDuration(session.durationSeconds),
-                                      style: TextStyle(
-                                        fontFamily: 'monospace',
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: theme.colorScheme.primary,
+                                      Text(
+                                        '${session.createdAt.toLocal().toString().split('.')[0]} · ${formatHMS(session.durationSeconds)}',
+                                        style: TextStyle(fontSize: 11, color: theme.colorScheme.outline, fontFeatures: const [FontFeature.tabularFigures()]),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 6),
-                                if (session.summary?.scientificHypothesis.isNotEmpty == true) ...[
-                                  Text(
-                                    'Hypothesis: ${session.summary!.scientificHypothesis}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontStyle: FontStyle.italic,
-                                      color: Colors.grey[700],
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+                                    ],
                                   ),
-                                  const SizedBox(height: 8),
-                                ],
-                                Row(
-                                  children: [
-                                    Text(
-                                      session.createdAt.toLocal().toString().split('.')[0],
-                                      style: TextStyle(fontSize: 11, color: theme.colorScheme.outline),
-                                    ),
-                                    const Spacer(),
-                                    if (session.isDeIdentified) ...[
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.teal.withOpacity(0.12),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: const Text('HIPAA', style: TextStyle(fontSize: 10, color: Colors.teal, fontWeight: FontWeight.bold)),
-                                      ),
-                                      const SizedBox(width: 6),
-                                    ],
-                                    if (session.audioSha256 != null) ...[
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.indigo.withOpacity(0.12),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.verified, size: 10, color: Colors.indigo),
-                                            SizedBox(width: 2),
-                                            Text('21 CFR 11', style: TextStyle(fontSize: 10, color: Colors.indigo, fontWeight: FontWeight.bold)),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                    ],
-                                    if (session.citations.isNotEmpty) ...[
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.blue.withOpacity(0.12),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text('${session.citations.length} Citations', style: const TextStyle(fontSize: 10, color: Colors.blue, fontWeight: FontWeight.bold)),
-                                      ),
-                                    ],
-                                  ],
                                 ),
+                                const Icon(Icons.chevron_right, size: 18),
                               ],
                             ),
-                          ),
+                            if (session.summary?.scientificHypothesis.isNotEmpty == true) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                session.summary!.scientificHypothesis,
+                                style: TextStyle(fontSize: 12.5, fontStyle: FontStyle.italic, height: 1.45, color: theme.colorScheme.onSurface.withValues(alpha: 0.8)),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 7,
+                              runSpacing: 7,
+                              children: [
+                                if (session.isDeIdentified)
+                                  StatusPill(icon: Icons.shield_outlined, label: 'HIPAA', color: theme.colorScheme.primary),
+                                if (session.audioSha256 != null)
+                                  StatusPill(icon: Icons.verified_outlined, label: '21 CFR 11', color: theme.colorScheme.secondary),
+                                if (session.citations.isNotEmpty)
+                                  StatusPill(icon: Icons.library_books_outlined, label: '${session.citations.length} papers', color: theme.colorScheme.secondary),
+                                if (session.speakerTurns.isNotEmpty)
+                                  StatusPill(icon: Icons.record_voice_over_outlined, label: '${session.speakerTurns.length} turns', color: theme.colorScheme.tertiary),
+                                if (session.actionItems.isNotEmpty)
+                                  StatusPill(icon: Icons.fact_check_outlined, label: '${session.actionItems.length} tasks', color: theme.colorScheme.primary),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     );

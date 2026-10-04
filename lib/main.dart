@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'src/core/theme/app_theme.dart';
 import 'src/features/intelligence/services/meeting_intelligence_service.dart';
 import 'src/features/public_apis/services/public_api_service.dart';
 import 'src/features/recorder/presentation/recorder_view.dart';
@@ -48,16 +49,8 @@ class LabScribeApp extends StatelessWidget {
       title: 'LabScribe AI — Scientific Meeting & Research Companion',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.system,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.teal,
-        brightness: Brightness.light,
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: Colors.teal,
-        brightness: Brightness.dark,
-      ),
+      theme: LabScribeTheme.light(),
+      darkTheme: LabScribeTheme.dark(),
       home: RecorderView(
         intelligenceService: intelligenceService,
         publicApiService: publicApiService,
