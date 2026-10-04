@@ -89,21 +89,32 @@ class MeetingIntelligenceService {
 
   /// Transcribe audio file with biomedical prompt conditioning and
   /// automated multi-part segmentation if the file exceeds the 24 MB ceiling.
+  ///
+  /// Honesty rule: sample data is returned ONLY when [allowDemoSample] is
+  /// true (explicit user opt-in). Endpoint failures are rethrown so the UI
+  /// can explain them instead of showing unrelated text.
   Future<String> transcribeAudio({
     required String audioFilePath,
     String? languageHint, // 'en', 'hi', or null for auto-detect
     void Function(String progressUpdate)? onProgress,
+    bool allowDemoSample = false,
   }) async {
     final file = File(audioFilePath);
     if (!await file.exists()) {
       throw Exception('Audio file not found at: $audioFilePath');
     }
 
-    // If running in demo mode or unconfigured Whisper, use built-in biomedical transcription simulator
+    // No transcription endpoint configured.
     if (isTranscriptionDemoMode) {
-      onProgress?.call('Processing with demo transcription...');
-      await Future.delayed(const Duration(milliseconds: 1200));
-      return _generateMockScientificTranscript();
+      if (allowDemoSample) {
+        onProgress?.call('Loading built-in sample transcript...');
+        await Future.delayed(const Duration(milliseconds: 1200));
+        return _generateMockScientificTranscript();
+      }
+      throw StateError(
+        'No transcription endpoint is configured. '
+        'Add a transcription URL and model in Settings, or reload with sample data.',
+      );
     }
 
     final String scientificContextPrompt;
@@ -166,10 +177,9 @@ class MeetingIntelligenceService {
         );
       }
     } catch (e) {
-      // Fallback to built-in demo transcript when the endpoint is unavailable
-      onProgress?.call('Endpoint unavailable; using built-in demo transcript...');
-      await Future.delayed(const Duration(milliseconds: 600));
-      return _generateMockScientificTranscript();
+      // Never substitute sample data for a failed endpoint. Surface the
+      // failure so the UI can offer retry, settings, or explicit sample use.
+      throw Exception('Transcription request failed: $e');
     }
   }
 
@@ -221,13 +231,20 @@ class MeetingIntelligenceService {
   })> processSessionIntelligence({
     required String transcript,
     required String sessionTitle,
+    bool allowDemoSample = false,
   }) async {
     if (transcript.trim().isEmpty) {
       throw Exception('Transcript is empty. Cannot generate intelligence.');
     }
 
     if (isLlmDemoMode) {
-      return _generateMockScientificIntelligence(transcript);
+      if (allowDemoSample) {
+        return _generateMockScientificIntelligence(transcript);
+      }
+      throw StateError(
+        'No language-model endpoint is configured. '
+        'Add an LLM URL and model in Settings, or reload with sample data.',
+      );
     }
 
     try {
@@ -375,8 +392,52 @@ $effectiveContext
       speakerTurns: speakerTurns,
     );
     } catch (e) {
-      // Fallback to built-in demo synthesis when the endpoint is unavailable
-      return _generateMockScientificIntelligence(transcript);
+      // Never substitute sample synthesis for a failed endpoint.
+      throw Exception('Analysis request failed: $e');
+    }
+  }
+
+  /// Lightweight reachability probe for the "endpoint status" indicator.
+  /// Returns false when unconfigured or unreachable. This is an
+  /// approximation (a `GET /models` check), not a transcription trial.
+  Future<bool> checkTranscriptionHealth() async {
+    try {
+      if (isTranscriptionDemoMode) return false;
+      final base = _config.transcriptionBaseUrl.replaceAll(RegExp(r'/+$'), '');
+      final response = await _dio.get(
+        '$base/models',
+        options: Options(
+          headers: {
+            if (_config.transcriptionApiKey.isNotEmpty)
+              'Authorization': 'Bearer ${_config.transcriptionApiKey}',
+          },
+          receiveTimeout: const Duration(seconds: 8),
+        ),
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Lightweight reachability probe for the "endpoint status" indicator.
+  Future<bool> checkLlmHealth() async {
+    try {
+      if (isLlmDemoMode) return false;
+      final base = _config.openAiBaseUrl.replaceAll(RegExp(r'/+$'), '');
+      final response = await _dio.get(
+        '$base/models',
+        options: Options(
+          headers: {
+            if (_config.openAiApiKey.isNotEmpty)
+              'Authorization': 'Bearer ${_config.openAiApiKey}',
+          },
+          receiveTimeout: const Duration(seconds: 8),
+        ),
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
     }
   }
 

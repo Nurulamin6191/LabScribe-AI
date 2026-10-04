@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// Reusable premium UI primitives for LabScribe AI.
@@ -449,3 +451,107 @@ class TalkTimeBar extends StatelessWidget {
   }
 }
 
+
+/// Amber strip marking results as built-in sample content.
+/// Shown whenever visible analysis came from the sample instead of the
+/// user's recording, so demo output can never be mistaken for real results.
+class DemoBanner extends StatelessWidget {
+  final VoidCallback onSetup;
+  const DemoBanner({super.key, required this.onSetup});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.colorScheme.tertiary.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.science_outlined, size: 17, color: theme.colorScheme.tertiary),
+          const SizedBox(width: 9),
+          const Expanded(
+            child: Text(
+              'Sample data — a built-in example, not your recording.',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, height: 1.35),
+            ),
+          ),
+          FilledButton.tonalIcon(
+            onPressed: onSetup,
+            icon: const Icon(Icons.key_outlined, size: 13),
+            label: const Text('Set up', style: TextStyle(fontSize: 12)),
+            style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Animated level-meter bars shown while recording, in the style of
+/// professional recorder apps. Pure presentation — no audio analysis.
+class RecordingBars extends StatefulWidget {
+  final bool active;
+  const RecordingBars({super.key, required this.active});
+
+  @override
+  State<RecordingBars> createState() => _RecordingBarsState();
+}
+
+class _RecordingBarsState extends State<RecordingBars> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+    if (widget.active) _controller.repeat();
+  }
+
+  @override
+  void didUpdateWidget(RecordingBars oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!widget.active && _controller.isAnimating) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(28, (i) {
+            final phase = _controller.value * 6.283 + i * 0.55;
+            final wave = (math.sin(phase) + 1) / 2;
+            final h = widget.active ? 4.0 + 11.0 * wave : 4.0;
+            final color = widget.active
+                ? theme.colorScheme.primary.withValues(alpha: 0.45 + 0.4 * wave)
+                : theme.colorScheme.outlineVariant;
+            return Container(
+              width: 3,
+              height: h,
+              margin: const EdgeInsets.symmetric(horizontal: 1.6),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(2), color: color),
+            );
+          }),
+        );
+      },
+    );
+  }
+}

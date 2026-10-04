@@ -87,6 +87,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   String _transcriptQuery = '';
   String? _transcriptSpeaker; // null = all speakers
   int _taskFilter = 0; // 0 All, 1 Open, 2 Done, 3 High priority
+  bool _isDemoContent = false; // true when visible results came from the built-in sample
+  bool? _sttOk; // endpoint reachability probe results (null = not tested)
+  bool? _llmOk;
+  bool _testingEndpoints = false;
   int _mobileNotesTab = 0; // 0 Overview, 1 Transcript
   int _mobileTasksTab = 0; // 0 Protocols, 1 Speakers
   bool _isWaitingForAiChatResponse = false;
@@ -125,6 +129,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _transcriptQuery = '';
       _transcriptSpeaker = null;
       _taskFilter = 0;
+      _isDemoContent = false;
     });
     if (MediaQuery.of(context).size.width >= 900) {
       _selectDesk(1);
@@ -235,6 +240,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           _recordingState = RecordingState.recording;
           _recordedAudioPath = filePath;
           _recordDurationSeconds = 0;
+          _isDemoContent = false;
           _statusMessage = 'Recording...';
           
           _currentSession = MeetingSession(
@@ -353,6 +359,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           _titleController.text = newSession.title;
           _recordedAudioPath = selectedPath;
           _recordingState = RecordingState.stopped;
+          _isDemoContent = false;
           _isVirtualCallMode = isCall;
           _statusMessage = 'Imported: $fileName (SHA-256 recorded). Ready for analysis.';
         });
@@ -871,9 +878,17 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   // --- AI processing with SHA-256 reference computation ---
 
-  Future<void> _executeAiPipeline() async {
+  bool get _sttConfigured => !widget.intelligenceService.isTranscriptionDemoMode;
+
+  Future<void> _executeAiPipeline({bool useDemoSample = false}) async {
     if (_recordedAudioPath == null && _currentSession?.audioPath == null) {
       _showSnackBar('No audio file found. Please record or import a session first.');
+      return;
+    }
+
+    // No transcription endpoint and no explicit sample request: guide setup first.
+    if (!_sttConfigured && !useDemoSample) {
+      await _runSetupFlow();
       return;
     }
 
@@ -892,6 +907,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       String transcript = await widget.intelligenceService.transcribeAudio(
         audioFilePath: _currentSession?.audioPath ?? _recordedAudioPath!,
         languageHint: langHint,
+        allowDemoSample: useDemoSample,
         onProgress: (status) {
           setState(() {
             _statusMessage = status;
@@ -925,6 +941,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       final intelligence = await widget.intelligenceService.processSessionIntelligence(
         transcript: transcript,
         sessionTitle: _currentSession?.title ?? 'Scientific Session',
+        allowDemoSample: useDemoSample,
       );
 
       // 4. Compute transcript SHA-256 reference
@@ -932,7 +949,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
       setState(() {
         _processingStage = ProcessingStage.completed;
-        _statusMessage = 'Analysis complete.';
+        _statusMessage = useDemoSample
+            ? 'Sample analysis shown — marked as demo content.'
+            : 'Analysis complete.';
+        _isDemoContent = useDemoSample;
         _currentSession?.summary = intelligence.summary;
         _currentSession?.actionItems = intelligence.actionItems;
         _currentSession?.glossaryTerms = intelligence.glossary;
@@ -940,22 +960,20 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         _currentSession?.speakerTurns = intelligence.speakerTurns;
         _currentSession?.transcriptSha256 = transcriptHash;
       });
-      
+
       if (_currentSession != null) {
         await SessionRepository().saveSession(_currentSession!);
       }
 
-      _showSnackBar('Analysis complete. References resolved where available.');
+      _showSnackBar(useDemoSample
+          ? 'Sample analysis shown — configure an endpoint for real results.'
+          : 'Analysis complete. References resolved where available.');
     } catch (e) {
       setState(() {
         _processingStage = ProcessingStage.error;
         _statusMessage = 'Error during AI pipeline: $e';
       });
-      if (_isConnectionError(e)) {
-        _showAiConnectionErrorDialog(e);
-      } else {
-        _showSnackBar('Pipeline error: $e');
-      }
+      _showPipelineErrorDialog(e);
     }
   }
 
@@ -1362,20 +1380,143 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         str.contains('errno = 111');
   }
 
-  Future<void> _showAiConnectionErrorDialog(dynamic error) async {
-    if (!mounted) return;
+  /// First-run wizard shown when no transcription endpoint is configured.
+  /// Returns 'retry' (key saved, run pipeline), 'sample', 'settings', or null.
+  Future<String?> _showSetupWizard() async {
+    final keyController = TextEditingController();
+    var obscure = true;
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.mic_outlined, color: Color(0xFF0A7C6B)),
+              SizedBox(width: 10),
+              Expanded(child: Text('Set up transcription', style: TextStyle(fontSize: 17))),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Your recording is saved on-device, but there is no transcription endpoint yet — so nothing has been transcribed. Pick one option:',
+                  style: TextStyle(fontSize: 13, height: 1.45),
+                ),
+                const SizedBox(height: 12),
+                const Text('OPTION 1 · FREE CLOUD KEY (ABOUT 2 MINUTES)', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+                const SizedBox(height: 4),
+                const Text('Create a free key at console.groq.com and paste it below. Uses Whisper Large-v3 + Llama 3.3.', style: TextStyle(fontSize: 12.5, height: 1.4)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: keyController,
+                  obscureText: obscure,
+                  decoration: InputDecoration(
+                    labelText: 'Groq API key (starts with gsk_)',
+                    isDense: true,
+                    suffixIcon: IconButton(
+                      icon: Icon(obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18),
+                      onPressed: () => setDlg(() => obscure = !obscure),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('OPTION 2 · LOCAL SERVER', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+                const SizedBox(height: 4),
+                const Text('Run scripts/setup_local_ai.sh, then enter the URLs in Settings.', style: TextStyle(fontSize: 12.5, height: 1.4)),
+                const SizedBox(height: 12),
+                const Text('OPTION 3 · SAMPLE DATA', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+                const SizedBox(height: 4),
+                const Text('Explore with a built-in example. It is always labeled as sample content.', style: TextStyle(fontSize: 12.5, height: 1.4)),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.settings_outlined, size: 16),
+              label: const Text('Settings'),
+              onPressed: () async {
+                Navigator.pop(ctx, 'settings');
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SettingsView()),
+                );
+                widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
+              },
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.science_outlined, size: 16),
+              label: const Text('Use sample'),
+              onPressed: () => Navigator.pop(ctx, 'sample'),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.key_outlined, size: 16),
+              label: const Text('Save key & run'),
+              onPressed: () async {
+                final key = keyController.text.trim();
+                if (key.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Paste your Groq API key first.')),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, 'retry');
+                await _saveGroqKey(key);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
+  Future<void> _saveGroqKey(String key) async {
+    final cfg = ConfigService();
+    await cfg.saveConfig(
+      openAiBaseUrl: 'https://api.groq.com/openai/v1',
+      openAiApiKey: key,
+      llmModel: 'llama-3.3-70b-versatile',
+      transcriptionBaseUrl: 'https://api.groq.com/openai/v1',
+      transcriptionApiKey: key,
+      transcriptionModel: 'whisper-large-v3',
+      libreTranslateBaseUrl: cfg.libreTranslateBaseUrl,
+      isDemoMode: false,
+    );
+    widget.intelligenceService.updateConfig(cfg.getAiConfig());
+    _showSnackBar('Groq endpoints saved. Running analysis on your recording.');
+  }
+
+  Future<void> _runSetupFlow() async {
+    final choice = await _showSetupWizard();
+    if (choice == 'sample') {
+      await _executeAiPipeline(useDemoSample: true);
+    } else if (choice == 'retry') {
+      await _executeAiPipeline();
+    }
+  }
+
+  /// Unified pipeline failure dialog. Never substitutes sample data silently:
+  /// the user explicitly chooses retry, sample, or settings.
+  Future<void> _showPipelineErrorDialog(dynamic error) async {
+    if (!mounted) return;
     final config = widget.intelligenceService.config;
-    final isLocalhost = config.transcriptionBaseUrl.contains('localhost') || config.openAiBaseUrl.contains('localhost');
+    final errText = error.toString();
+    final short = errText.length > 220 ? '${errText.substring(0, 220)}…' : errText;
 
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Row(
           children: [
-            Icon(Icons.wifi_off, color: Colors.amber),
+            Icon(Icons.error_outline, color: Colors.orange, size: 26),
             SizedBox(width: 10),
-            Text('Cannot Connect to AI Engine', style: TextStyle(fontSize: 18)),
+            Expanded(child: Text('Analysis failed', style: TextStyle(fontSize: 17))),
           ],
         ),
         content: SingleChildScrollView(
@@ -1383,13 +1524,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                isLocalhost
-                    ? 'LabScribe could not connect to your local AI engine on localhost.'
-                    : 'LabScribe could not connect to the configured AI endpoint.',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 10),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(10),
@@ -1400,23 +1534,16 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('STT Endpoint: ${config.transcriptionBaseUrl}', style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
-                    Text('LLM Endpoint: ${config.openAiBaseUrl}', style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
-                    const SizedBox(height: 4),
-                    const Text('Status: Connection Refused (No server listening)', style: TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                    Text('STT: ${config.transcriptionBaseUrl}', style: const TextStyle(fontSize: 11.5, fontFamily: 'monospace')),
+                    Text('LLM: ${config.openAiBaseUrl}', style: const TextStyle(fontSize: 11.5, fontFamily: 'monospace')),
+                    const SizedBox(height: 6),
+                    Text(short, style: const TextStyle(fontSize: 12)),
                   ],
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               const Text(
-                'How would you like to proceed?',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '1. Free Cloud (Zero CLI): Select "Cloud: Groq Free Tier" in Settings and paste a free key from console.groq.com.\n'
-                '2. Offline Demo Mode: Test all scientific features right now with simulated data (no setup needed).\n'
-                '3. Local Server: Start Ollama (ollama serve) and Whisper on port 8000 on your machine.',
+                'Your audio and notes are unchanged. You can retry, inspect the endpoints in Settings, or view labeled sample data to explore the dashboards.',
                 style: TextStyle(fontSize: 12.5, height: 1.4),
               ),
             ],
@@ -1427,28 +1554,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Dismiss'),
           ),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.play_circle_outline, size: 18),
-            label: const Text('Try Demo Mode'),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await ConfigService().saveConfig(
-                openAiBaseUrl: 'demo',
-                openAiApiKey: 'demo',
-                llmModel: 'demo-scientific-ai',
-                transcriptionBaseUrl: 'demo',
-                transcriptionApiKey: 'demo',
-                transcriptionModel: 'demo-whisper',
-                libreTranslateBaseUrl: ConfigService().libreTranslateBaseUrl,
-                isDemoMode: true,
-              );
-              widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
-              _executeAiPipeline();
-            },
-          ),
-          FilledButton.icon(
-            icon: const Icon(Icons.settings, size: 18),
-            label: const Text('Open Settings'),
+          TextButton.icon(
+            icon: const Icon(Icons.settings_outlined, size: 16),
+            label: const Text('Settings'),
             onPressed: () async {
               Navigator.pop(ctx);
               await Navigator.push(
@@ -1458,9 +1566,53 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
             },
           ),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.science_outlined, size: 16),
+            label: const Text('View sample'),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _executeAiPipeline(useDemoSample: true);
+            },
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.refresh, size: 16),
+            label: const Text('Retry'),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _executeAiPipeline();
+            },
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _testEndpoints() async {
+    setState(() {
+      _testingEndpoints = true;
+    });
+    try {
+      final results = await Future.wait([
+        widget.intelligenceService.checkTranscriptionHealth(),
+        widget.intelligenceService.checkLlmHealth(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _sttOk = results[0];
+        _llmOk = results[1];
+        _testingEndpoints = false;
+        _statusMessage = results[0] && results[1]
+            ? 'Both endpoints responded.'
+            : 'Endpoint check finished — review any failures in Settings.';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _sttOk = false;
+        _llmOk = false;
+        _testingEndpoints = false;
+      });
+    }
   }
 
   Future<void> _sendChatMessage() async {
@@ -2456,6 +2608,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       ),
       child: Column(
         children: [
+          RecordingBars(active: isRec),
+          SizedBox(height: isRec ? 8 : 4),
           Text(
             formatHMS(_recordDurationSeconds),
             style: TextStyle(
@@ -2576,6 +2730,19 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             label: const Text('Stop'),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _endpointDot(ThemeData theme, bool? ok, String label) {
+    final color = ok == null ? theme.colorScheme.outline : (ok ? Colors.green : theme.colorScheme.error);
+    final text = ok == null ? '$label · untested' : (ok ? '$label · ready' : '$label · failed');
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: color)),
+        const SizedBox(width: 6),
+        Text(text, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
       ],
     );
   }
@@ -2780,8 +2947,32 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           ),
         ),
         const SizedBox(height: 12),
+        if (!_sttConfigured) ...[
+          LabCard(
+            color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.45),
+            child: Row(
+              children: [
+                Icon(Icons.mic_outlined, size: 18, color: theme.colorScheme.tertiary),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Transcription is not set up yet — recordings will not be transcribed until you add an endpoint.',
+                    style: TextStyle(fontSize: 12, height: 1.4),
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: _runSetupFlow,
+                  icon: const Icon(Icons.key_outlined, size: 14),
+                  label: const Text('Set up', style: TextStyle(fontSize: 12)),
+                  style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
         FilledButton.icon(
-          onPressed: canProcess ? _executeAiPipeline : null,
+          onPressed: canProcess ? () => _executeAiPipeline() : null,
           icon: const Icon(Icons.auto_awesome, size: 16),
           label: const Text('Process AI insights'),
           style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15)),
@@ -2799,6 +2990,26 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 const SizedBox(height: 8),
                 const LinearProgressIndicator(),
               ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        LabCard(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          child: Row(
+            children: [
+              _endpointDot(theme, _sttOk, 'STT'),
+              const SizedBox(width: 10),
+              _endpointDot(theme, _llmOk, 'LLM'),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: _testingEndpoints ? null : _testEndpoints,
+                icon: _testingEndpoints
+                    ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.wifi_tethering_outlined, size: 14),
+                label: const Text('Test', style: TextStyle(fontSize: 12)),
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              ),
             ],
           ),
         ),
@@ -2952,6 +3163,11 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             ],
           ),
         ),
+        if (_isDemoContent)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: DemoBanner(onSetup: _runSetupFlow),
+          ),
         if (_showTranslatedTranscript && _translatedTranscript != null)
           Container(
             margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -3151,6 +3367,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                     ),
                 ],
               ),
+              if (_isDemoContent) ...[
+                const SizedBox(height: 12),
+                DemoBanner(onSetup: _runSetupFlow),
+              ],
               const SizedBox(height: 14),
               Row(
                 children: [

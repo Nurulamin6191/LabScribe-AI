@@ -111,7 +111,15 @@ flowchart TD
 
 ## Local AI Engine Setup
 
-Optional. The app also includes a built-in demo mode for trying the workflow without configured endpoints.
+You have three options, in order of effort. The app guides you on first use:
+pressing **Process AI insights** without a transcription endpoint opens a
+setup wizard (paste a Groq key, open Settings, or explicitly use sample data).
+
+**Fastest real transcription (~2 minutes, free):** create a key at
+`console.groq.com` and paste it in the wizard or Settings preset
+`Cloud: Groq`. This enables Whisper Large-v3 + Llama 3.3.
+
+Optional fully local setup:
 
 ```bash
 chmod +x scripts/setup_local_ai.sh
@@ -132,6 +140,11 @@ Throughput and accuracy vary by hardware, quantization, and server version. Meas
 Configure endpoints in **Settings** in the app:
 - **Transcription Endpoint**: e.g. `http://localhost:8000` or a compatible API
 - **LLM Endpoint**: e.g. `http://localhost:11434` (Ollama) or `http://localhost:8000` (vLLM)
+
+The recording deck shows red/amber/green reachability dots for both
+endpoints (tap **Test**). Until transcription is configured, analysis runs
+only on explicitly chosen sample data, which is always labeled as such.
+See `docs/PIPELINE.md` for source priority and honesty rules.
 
 ---
 
