@@ -40,15 +40,14 @@ Overview (stats · talk time · key moments · synthesis)
 Transcript (search · speaker filter · timestamped turns)
 Actions (progress · All/Open/Done/High filters)
 Speakers (talk-time bar · per-speaker aggregates · turn timeline)
-Compounds (PubChem + local atlas search)
-Papers (PubMed search + in-app reader)
+Library (compounds via PubChem + atlas · papers via PubMed + reader)
 Ask (transcript-grounded Q&A)
 Archive (search · type filters · sort)
 ```
 
 Desktop ≥1200px shows a full sidebar; 900–1200px collapses to an icon rail;
 below 900px a 5-destination bottom bar groups related tabs
-(Overview+Transcript, Actions+Speakers, Compounds+Papers).
+(Overview+Transcript, Actions+Speakers, Library).
 
 ## 3. Design tokens
 
@@ -78,7 +77,7 @@ Borrowed from messaging/learning leaders, adapted for research:
 
 - Record is a destination, not a modal: wet-lab sessions run long and the
   deck stays usable beside slides or a call window (compact dock preserved).
-- Compounds and papers are first-class tabs, not side panels: resolving a
+- Compounds and papers share one Library tab (segmented): resolving a
   drug or a PMID mid-review is a core bench task, not an edge case.
 - Hashes and redaction flags are labeled as references and helpers, never
   as compliance certifications. See README `Limitations`.
