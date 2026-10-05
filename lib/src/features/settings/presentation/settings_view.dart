@@ -18,6 +18,8 @@ class _SettingsViewState extends State<SettingsView> {
   bool _preparing = false;
   String _prepStatus = '';
   int? _prepPct;
+  double? _prepDlFraction;
+  String _prepDlLabel = '';
 
   static const _models = [
     ('tiny', 'Tiny · 75 MB', 'Fastest. Good for quick notes on any device.'),
@@ -30,12 +32,26 @@ class _SettingsViewState extends State<SettingsView> {
     super.initState();
     _whisperModel = ConfigService().whisperModel;
     _engine = MeetingIntelligenceService(config: ConfigService().getAiConfig());
+    _refreshDisk();
   }
+
+  Future<void> _refreshDisk() async {
+    final st = await _engine.modelFileStatus(_whisperModel);
+    if (!mounted) return;
+    setState(() {
+      _diskInfo = st.present
+          ? 'Model file on disk: ${(st.bytes / 1048576).toStringAsFixed(0)} MB.'
+          : 'Model file not on disk yet.';
+    });
+  }
+
+  String _diskInfo = '';
 
   Future<void> _saveModel(String model) async {
     setState(() => _whisperModel = model);
     await ConfigService().setWhisperModel(model);
     _engine.updateConfig(ConfigService().getAiConfig());
+    await _refreshDisk();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Speech model saved. Download it below to get ready.')),
@@ -50,6 +66,8 @@ class _SettingsViewState extends State<SettingsView> {
     setState(() {
       _preparing = true;
       _prepPct = null;
+      _prepDlFraction = null;
+      _prepDlLabel = '';
       _prepStatus = 'Starting download...';
     });
     try {
@@ -59,11 +77,22 @@ class _SettingsViewState extends State<SettingsView> {
         onStatus: (s) {
           if (mounted) setState(() => _prepStatus = s);
         },
+        onDownloadProgress: (fraction, received, total) {
+          if (mounted) {
+            setState(() {
+              _prepDlFraction = fraction;
+              _prepDlLabel =
+                  '${(received / 1048576).toStringAsFixed(0)}/${(total / 1048576).toStringAsFixed(0)} MB';
+              _prepStatus = 'Downloading model...';
+            });
+          }
+        },
         onProgress: (p) {
           if (mounted) {
             setState(() {
               _prepPct = p;
-              _prepStatus = 'Preparing model — $p%...';
+              _prepDlFraction = null;
+              _prepStatus = 'Verifying engine — $p%...';
             });
           }
         },
@@ -73,6 +102,7 @@ class _SettingsViewState extends State<SettingsView> {
           _preparing = false;
           _prepStatus = 'Ready on this device.';
         });
+        await _refreshDisk();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Speech model ready. Transcription now works offline.')),
         );
@@ -189,7 +219,17 @@ class _SettingsViewState extends State<SettingsView> {
                     ),
                   ],
                 ),
-                if (_preparing && _prepPct != null) ...[
+                if (_diskInfo.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(_diskInfo, style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline)),
+                ],
+                if (_preparing && _prepDlFraction != null) ...[
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(value: _prepDlFraction!.clamp(0.0, 1.0)),
+                  const SizedBox(height: 4),
+                  Text(_prepDlLabel, style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline)),
+                ],
+                if (_preparing && _prepDlFraction == null && _prepPct != null) ...[
                   const SizedBox(height: 8),
                   LinearProgressIndicator(value: (_prepPct! / 100).clamp(0.0, 1.0)),
                 ],

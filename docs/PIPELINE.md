@@ -32,11 +32,15 @@ rules that keep the app honest about where every word came from.
 Adopted for all release platforms (Android, iOS, Linux, macOS, Windows).
 Only the long-stable API surface is used: `WhisperController`,
 `transcribe(model:, audioPath:, lang:, initialPrompt:, withSegments:,
-onProgress:)`, `WhisperModel.tiny/base/small` (multilingual variants;
+onProgress:)`, `WhisperModel.modelUri`, `getPath`, `WhisperModel.tiny/base/small` (multilingual variants;
 English-only `*En` models are avoided so Hinglish keeps working).
 `lang` maps from the app language selector (`en` → `en`, `hi` → `hi`,
-otherwise `auto`). Synthesis, Q&A, and translation use a keyless hosted
-open model (`MeetingIntelligenceService.llmBaseUrl`).
+otherwise `auto`). Model files are downloaded by the app itself from the
+plugin's own HuggingFace URLs (`modelUri`) into the plugin's own path
+(`getPath`) with real MB progress and size verification — never trusting
+an invisible auto-download. A silence warm-up then proves inference works
+before any meeting audio is touched. Synthesis, Q&A, and translation use
+a keyless hosted open model (`MeetingIntelligenceService.llmBaseUrl`).
 
 ## 4. Model sizes (Engine settings)
 

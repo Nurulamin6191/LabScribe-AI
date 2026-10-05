@@ -209,6 +209,85 @@ class MeetingIntelligenceService {
     );
   }
 
+  /// Approximate on-disk bytes per model (validates completed downloads).
+  static const Map<String, int> expectedModelBytes = {
+    'tiny': 75 * 1024 * 1024,
+    'base': 150 * 1024 * 1024,
+    'small': 465 * 1024 * 1024,
+  };
+
+  /// Local model-file status: presence + size on disk.
+  Future<({bool present, int bytes, String path})> modelFileStatus(String name) async {
+    try {
+      final controller = WhisperController();
+      final path = await controller.getPath(_whisperModel(name));
+      final file = File(path);
+      if (await file.exists()) {
+        return (present: true, bytes: await file.length(), path: path);
+      }
+      return (present: false, bytes: 0, path: path);
+    } catch (_) {
+      return (present: false, bytes: 0, path: '');
+    }
+  }
+
+  /// Downloads the model from the plugin's own HuggingFace URL
+  /// (`WhisperModel.modelUri`) into the plugin's own path
+  /// (`WhisperController.getPath`), with real progress and size
+  /// verification. A truncated or corrupt file is deleted and reported
+  /// instead of being fed to the engine.
+  Future<String> downloadModelFile({
+    required String name,
+    void Function(double fraction, int received, int total)? onProgress,
+  }) async {
+    final model = _whisperModel(name);
+    final controller = WhisperController();
+    final path = await controller.getPath(model);
+    final expected = expectedModelBytes[name] ?? (100 * 1024 * 1024);
+    final file = File(path);
+
+    if (await file.exists()) {
+      final len = await file.length();
+      if (len > expected ~/ 2) return path;
+      try {
+        await file.delete();
+      } catch (_) {}
+    }
+
+    try {
+      await _dio.download(
+        model.modelUri.toString(),
+        path,
+        deleteOnError: true,
+        options: Options(
+          receiveTimeout: const Duration(minutes: 30),
+          sendTimeout: const Duration(seconds: 30),
+        ),
+        onReceiveProgress: (received, total) {
+          final denom = total > 0 ? total : expected;
+          onProgress?.call((received / denom).clamp(0.0, 1.0), received, denom);
+        },
+      );
+    } catch (e) {
+      throw Exception(
+        'Model download failed ($name). Connect to stable internet and retry. '
+        'Details: $e',
+      );
+    }
+
+    final len = await file.length();
+    if (len < expected ~/ 2) {
+      try {
+        await file.delete();
+      } catch (_) {}
+      throw Exception(
+        'Model download incomplete ($name): got ${(len / 1048576).toStringAsFixed(0)} MB, '
+        'expected ~${(expected / 1048576).toStringAsFixed(0)} MB. Retry on stable internet.',
+      );
+    }
+    return path;
+  }
+
   WhisperModel _whisperModel([String? name]) {
     switch (name ?? _config.whisperModel) {
       case 'tiny':
@@ -230,12 +309,27 @@ class MeetingIntelligenceService {
     String? modelName,
     void Function(String status)? onStatus,
     void Function(int percent)? onProgress,
+    void Function(double fraction, int received, int total)? onDownloadProgress,
     bool force = false,
   }) async {
     final name = modelName ?? _config.whisperModel;
-    if (!force && ConfigService().isModelWarmed(name)) return;
+    if (!force && ConfigService().isModelWarmed(name)) {
+      final status = await modelFileStatus(name);
+      if (status.present) return;
+    }
     final size = ConfigService.whisperSizes[name] ?? '';
     onStatus?.call('Downloading $name model ($size) — one time only...');
+    await downloadModelFile(
+      name: name,
+      onProgress: (fraction, received, total) {
+        onDownloadProgress?.call(fraction, received, total);
+        onStatus?.call(
+          'Downloading $name — ${(received / 1048576).toStringAsFixed(0)}/${(total / 1048576).toStringAsFixed(0)} MB...',
+        );
+      },
+    );
+    // Validate end-to-end inference on generated silence (empty text is
+    // correct for silence; any completed call proves the engine works).
     final dir = await getTemporaryDirectory();
     final silentPath = await WavProbe.writeSilenceWav(dir);
     try {

@@ -31,6 +31,8 @@ class _SetupViewState extends State<SetupView> {
   bool _busy = false;
   String _status = '';
   int? _pct;
+  double? _dlFraction;
+  String _dlLabel = '';
 
   static const _models = [
     ('tiny', 'Tiny · 75 MB', 'Fastest. Good for quick notes on any device.'),
@@ -51,6 +53,8 @@ class _SetupViewState extends State<SetupView> {
     setState(() {
       _busy = true;
       _pct = null;
+      _dlFraction = null;
+      _dlLabel = '';
       _status = 'Starting download...';
     });
     try {
@@ -62,11 +66,22 @@ class _SetupViewState extends State<SetupView> {
         onStatus: (s) {
           if (mounted) setState(() => _status = s);
         },
+        onDownloadProgress: (fraction, received, total) {
+          if (mounted) {
+            setState(() {
+              _dlFraction = fraction;
+              _dlLabel =
+                  '${(received / 1048576).toStringAsFixed(0)}/${(total / 1048576).toStringAsFixed(0)} MB';
+              _status = 'Downloading model...';
+            });
+          }
+        },
         onProgress: (p) {
           if (mounted) {
             setState(() {
               _pct = p;
-              _status = 'Preparing model — $p%...';
+              _dlFraction = null;
+              _status = 'Verifying engine — $p%...';
             });
           }
         },
@@ -221,12 +236,21 @@ class _SetupViewState extends State<SetupView> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_status.isEmpty ? 'Preparing...' : _status, style: const TextStyle(fontSize: 12.5, height: 1.4)),
-                      if (_busy && _pct != null) ...[
+                      Text(
+                        _dlFraction != null
+                            ? '$_status ${_dlLabel.isNotEmpty ? _dlLabel : ''}'.trim()
+                            : (_status.isEmpty ? 'Preparing...' : _status),
+                        style: const TextStyle(fontSize: 12.5, height: 1.4),
+                      ),
+                      if (_busy && _dlFraction != null) ...[
+                        const SizedBox(height: 8),
+                        LinearProgressIndicator(value: _dlFraction!.clamp(0.0, 1.0)),
+                      ],
+                      if (_busy && _dlFraction == null && _pct != null) ...[
                         const SizedBox(height: 8),
                         LinearProgressIndicator(value: (_pct! / 100).clamp(0.0, 1.0)),
                       ],
-                      if (_busy && _pct == null) ...[
+                      if (_busy && _dlFraction == null && _pct == null) ...[
                         const SizedBox(height: 8),
                         const LinearProgressIndicator(),
                       ],
