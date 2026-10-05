@@ -95,13 +95,13 @@ class _HistoryViewState extends State<HistoryView> {
       if (session != null) {
         final docs = await getApplicationDocumentsDirectory();
         final temp = await getTemporaryDirectory();
-        final managed = [docs.path, temp.path];
-        bool managed(String? p) =>
-            p != null && p.isNotEmpty && managed.any((d) => p.startsWith(d));
+        final roots = [docs.path, temp.path];
+        bool isManaged(String? p) =>
+            p != null && p.isNotEmpty && roots.any((d) => p.startsWith(d));
         final targets = <String>[
-          if (managed(session.audioPath)) session.audioPath!,
+          if (isManaged(session.audioPath)) session.audioPath!,
           for (final s in session.slideAttachments)
-            if (managed(s.imagePath)) s.imagePath,
+            if (isManaged(s.imagePath)) s.imagePath,
         ];
         for (final path in targets) {
           try {
