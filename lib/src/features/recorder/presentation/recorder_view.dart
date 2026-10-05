@@ -94,21 +94,19 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
   
-  final TextEditingController _pubmedSearchController = TextEditingController();
-  bool _isSearchingPubmed = false;
-  List<PubMedCitation> _searchResultsPubMed = [];
-
   MeetingSession? _currentSession;
-  late TabController _tabController;
-  int _mobileNavIndex = 0;
-  int _deskIndex = 0; // desktop: 0 Record, 1..6 map to tabController 0..5
+  // Bottom-bar / sidebar destination: 0 Meet, 1 Sessions, 2 Tasks, 3 Engine.
+  int _navIndex = 0;
+  // When true, the Sessions destination shows the open session's detail
+  // (Zoom-cloud-recording style) instead of the list.
+  bool _viewingSession = false;
+  // Detail segment: 0 Transcript, 1 Summary, 2 Actions.
+  int _detailTab = 0;
   final TextEditingController _transcriptSearchController = TextEditingController();
   String _transcriptQuery = '';
   String? _transcriptSpeaker; // null = all speakers
   int _taskFilter = 0; // 0 All, 1 Open, 2 Done, 3 High priority
   final Set<String> _exportedIds = {}; // sessions exported at least once (drives workflow stage)
-  int _mobileNotesTab = 0; // 0 Overview, 1 Transcript
-  int _mobileTasksTab = 0; // 0 Protocols, 1 Speakers
   bool _isWaitingForAiChatResponse = false;
   bool _isMeetingCompactMode = false;
 
@@ -131,7 +129,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _recordingState = RecordingState.stopped;
       _statusMessage = 'Loaded saved session from local storage.';
       _enableClinicalDeIdentification = session.isDeIdentified;
-      _searchResultsPubMed.clear();
       _translatedTranscript = null;
       _showTranslatedTranscript = false;
       _isTranscriptEditMode = false;
@@ -141,10 +138,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _transcriptQuery = '';
       _transcriptSpeaker = null;
       _taskFilter = 0;
+      _detailTab = 1;
+      _viewingSession = true;
     });
-    if (MediaQuery.of(context).size.width >= 900) {
-      _selectDesk(1);
-    }
   }
 
   @override
@@ -178,10 +174,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       }
     });
 
-    // 6 review tabs: Overview, Transcript, Actions, Speakers, Library, Q&A
-    // (desktop Record destination is separate from the TabController)
-    _tabController = TabController(length: 6, vsync: this);
-    _tabController.addListener(_syncDeskFromTab);
     _titleController.addListener(_onTitleChanged);
 
     // Enumerate connected microphones (Jabra, USB, AirPods, built-in)
@@ -196,12 +188,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     _titleController.dispose();
     _chatController.dispose();
     _chatScrollController.dispose();
-    _pubmedSearchController.dispose();
     _transcriptEditController.dispose();
     _transcriptSearchController.dispose();
     _titleController.removeListener(_onTitleChanged);
-    _tabController.removeListener(_syncDeskFromTab);
-    _tabController.dispose();
     super.dispose();
   }
 
@@ -901,43 +890,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  Future<void> _searchPubMedOnDemand(String query) async {
-    final term = query.trim();
-    if (term.isEmpty) return;
-
-    setState(() {
-      _isSearchingPubmed = true;
-    });
-
-    try {
-      final results = await widget.publicApiService.resolveLiteratureCitations([term]);
-      setState(() {
-        _searchResultsPubMed = results;
-        if (_currentSession != null) {
-          for (final r in results) {
-            if (!_currentSession!.citations.any((c) => c.pmid == r.pmid)) {
-              _currentSession!.citations.insert(0, r);
-            }
-          }
-          SessionRepository().saveSession(_currentSession!);
-        }
-      });
-      if (results.isEmpty) {
-        _showSnackBar('No publications found on PubMed for "$term".');
-      }
-    } catch (e) {
-      _showSnackBar('PubMed search error: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSearchingPubmed = false;
-        });
-      }
-    }
-  }
-
-  // --- AI processing with SHA-256 reference computation ---
-
   Future<void> _executeAiPipeline() async {
     final audioPath = (_currentSession?.audioPath?.isNotEmpty == true)
         ? _currentSession!.audioPath
@@ -1417,10 +1369,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   /// Reference library: saved papers (PubMed) with in-app reading.
-  Widget _buildLibraryTab(ThemeData theme) => _buildCitationsTab(theme);
-
-  Widget _buildScienceMobile(ThemeData theme) => _buildLibraryTab(theme);
-
   bool _isConnectionError(dynamic e) {
     if (e is DioException) {
       if (e.type == DioExceptionType.connectionError ||
@@ -1660,12 +1608,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     }
   }
 
-  void _syncTab(int index) {
-    if (_tabController.index != index) {
-      _tabController.animateTo(index);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1760,37 +1702,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 });
               },
             ),
-            if (!isCompactAction) ...[
+            if (!isCompactAction)
               IconButton(
                 icon: const Icon(Icons.auto_stories_outlined),
                 tooltip: 'Notebook Preview',
                 onPressed: _showMarkdownPreviewer,
               ),
-              IconButton(
-                icon: const Icon(Icons.history),
-                tooltip: 'Session History',
-                onPressed: () async {
-                  final selectedSession = await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const HistoryView()),
-                  );
-                  if (selectedSession != null && selectedSession is MeetingSession) {
-                    loadSession(selectedSession);
-                  }
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings_outlined),
-                tooltip: 'Settings & Model Config',
-                onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const SettingsView()),
-                  );
-                  widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
-                },
-              ),
-            ],
             PopupMenuButton<String>(
               icon: const Icon(Icons.ios_share),
               tooltip: 'Export Research Notes & Citations',
@@ -1798,24 +1715,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               onSelected: (value) async {
                 if (value == 'preview') {
                   _showMarkdownPreviewer();
-                  return;
-                }
-                if (value == 'history') {
-                  final selectedSession = await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const HistoryView()),
-                  );
-                  if (selectedSession != null && selectedSession is MeetingSession) {
-                    loadSession(selectedSession);
-                  }
-                  return;
-                }
-                if (value == 'settings') {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const SettingsView()),
-                  );
-                  widget.intelligenceService.updateConfig(ConfigService().getAiConfig());
                   return;
                 }
                 if (_currentSession == null) {
@@ -1832,39 +1731,16 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 _markExported();
               },
               itemBuilder: (context) => [
-                if (isCompactAction)
-                  const PopupMenuItem(
-                    value: 'preview',
-                    child: Row(
-                      children: [
-                        Icon(Icons.auto_stories_outlined, size: 18),
-                        SizedBox(width: 8),
-                        Text('Notebook Preview'),
-                      ],
-                    ),
+                const PopupMenuItem(
+                  value: 'preview',
+                  child: Row(
+                    children: [
+                      Icon(Icons.auto_stories_outlined, size: 18),
+                      SizedBox(width: 8),
+                      Text('Notebook Preview'),
+                    ],
                   ),
-                if (isCompactAction)
-                  const PopupMenuItem(
-                    value: 'history',
-                    child: Row(
-                      children: [
-                        Icon(Icons.history, size: 18),
-                        SizedBox(width: 8),
-                        Text('Session History'),
-                      ],
-                    ),
-                  ),
-                if (isCompactAction)
-                  const PopupMenuItem(
-                    value: 'settings',
-                    child: Row(
-                      children: [
-                        Icon(Icons.settings_outlined, size: 18),
-                        SizedBox(width: 8),
-                        Text('Settings'),
-                      ],
-                    ),
-                  ),
+                ),
                 const PopupMenuItem(
                   value: 'markdown',
                   child: Row(
@@ -1903,19 +1779,27 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         body: _buildResponsiveBody(context, theme, isDesktop),
         bottomNavigationBar: (!isDesktop && !_isMeetingCompactMode)
             ? NavigationBar(
-                selectedIndex: _mobileNavIndex,
+                selectedIndex: _navIndex,
                 onDestinationSelected: (idx) {
                   setState(() {
-                    _mobileNavIndex = idx;
+                    _navIndex = idx;
+                    _viewingSession = false;
                   });
+                  if (idx == 2) _loadAllSessions();
                 },
                 destinations: const [
-                  NavigationDestination(icon: Icon(Icons.mic_outlined), selectedIcon: Icon(Icons.mic), label: 'Record'),
-                  NavigationDestination(icon: Icon(Icons.summarize_outlined), selectedIcon: Icon(Icons.summarize), label: 'Notes'),
+                  NavigationDestination(icon: Icon(Icons.mic_outlined), selectedIcon: Icon(Icons.mic), label: 'Meet'),
+                  NavigationDestination(icon: Icon(Icons.video_library_outlined), selectedIcon: Icon(Icons.video_library), label: 'Sessions'),
                   NavigationDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check), label: 'Tasks'),
-                  NavigationDestination(icon: Icon(Icons.science_outlined), selectedIcon: Icon(Icons.science), label: 'Library'),
-                  NavigationDestination(icon: Icon(Icons.forum_outlined), selectedIcon: Icon(Icons.forum), label: 'Q&A'),
+                  NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Engine'),
                 ],
+              )
+            : null,
+        floatingActionButton: (_viewingSession && !_isMeetingCompactMode)
+            ? FloatingActionButton(
+                tooltip: 'Ask about this session',
+                onPressed: _openChatSheet,
+                child: const Icon(Icons.forum_outlined),
               )
             : null,
       ),
@@ -1924,22 +1808,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   void _onTitleChanged() {
     if (mounted) setState(() {});
-  }
-
-  void _syncDeskFromTab() {
-    // Keeps the desktop sidebar highlight in sync when the tab changes
-    // (e.g. swipe gestures). Ignored while the Record deck is shown.
-    if (_deskIndex != 0) {
-      final want = _tabController.index + 1;
-      if (_deskIndex != want && mounted) {
-        setState(() => _deskIndex = want);
-      }
-    }
-  }
-
-  void _selectDesk(int i) {
-    setState(() => _deskIndex = i);
-    if (i >= 1) _tabController.animateTo(i - 1);
   }
 
   int _wordCount(String s) => s.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
@@ -2043,14 +1911,40 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  Widget _deskNavEntry(ThemeData theme, int desk, IconData icon, String label, String? count, {bool expanded = false}) {
-    final selected = _deskIndex == desk;
+  void _selectNav(int i) {
+    setState(() {
+      _navIndex = i;
+      _viewingSession = false;
+    });
+    if (i == 2) _loadAllSessions();
+  }
+
+  String _tasksBadge() {
+    var open = 0;
+    var total = 0;
+    for (final s in _allSessionsCache) {
+      for (final a in s.actionItems) {
+        total++;
+        if (!a.isCompleted) open++;
+      }
+    }
+    if (total == 0) {
+      final mine = _currentSession?.actionItems ?? [];
+      total = mine.length;
+      open = mine.where((e) => !e.isCompleted).length;
+    }
+    if (total == 0) return '';
+    return open == 0 ? '$total' : '$open/$total';
+  }
+
+  Widget _deskNavEntry(ThemeData theme, int dest, IconData icon, String label, String? count, {bool expanded = false}) {
+    final selected = _navIndex == dest && !_viewingSession;
     if (!expanded) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: () => _selectDesk(desk),
+          onTap: () => _selectNav(dest),
           child: Container(
             width: 68,
             padding: const EdgeInsets.symmetric(vertical: 9),
@@ -2089,7 +1983,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => _selectDesk(desk),
+        onTap: () => _selectNav(dest),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           decoration: BoxDecoration(
@@ -2128,32 +2022,14 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  String _openTaskCount() {
-    final tasks = _currentSession?.actionItems ?? [];
-    if (tasks.isEmpty) return '';
-    final open = tasks.where((e) => !e.isCompleted).length;
-    return open == 0 ? '${tasks.length}' : '$open/${tasks.length}';
-  }
-
   List<Widget> _deskNavEntries(ThemeData theme, {required bool expanded}) {
-    final s = _currentSession;
     String n(int v) => v == 0 ? '' : '$v';
     return [
-      _deskNavEntry(theme, 0, Icons.mic_outlined, 'Record', null, expanded: expanded),
-      _deskNavEntry(theme, 1, Icons.summarize_outlined, 'Overview', null, expanded: expanded),
-      _deskNavEntry(theme, 2, Icons.description_outlined, 'Transcript', s == null || s.transcript.isEmpty ? '' : '${_wordCount(s.transcript)}w', expanded: expanded),
-      _deskNavEntry(theme, 3, Icons.fact_check_outlined, 'Actions', _openTaskCount(), expanded: expanded),
-      _deskNavEntry(theme, 4, Icons.record_voice_over_outlined, 'Speakers', n(s?.speakerTurns.length ?? 0), expanded: expanded),
-      _deskNavEntry(theme, 5, Icons.library_books_outlined, 'Library', n(s?.citations.length ?? 0), expanded: expanded),
-      _deskNavEntry(theme, 6, Icons.forum_outlined, 'Ask', n(s?.chatHistory.length ?? 0), expanded: expanded),
+      _deskNavEntry(theme, 0, Icons.mic_outlined, 'Meet', null, expanded: expanded),
+      _deskNavEntry(theme, 1, Icons.video_library_outlined, 'Sessions', n(_allSessionsCache.length), expanded: expanded),
+      _deskNavEntry(theme, 2, Icons.fact_check_outlined, 'Tasks', _tasksBadge(), expanded: expanded),
+      _deskNavEntry(theme, 3, Icons.settings_outlined, 'Engine', null, expanded: expanded),
     ];
-  }
-
-  Widget _railDestination(ThemeData theme, int tabIndex, IconData icon, String label) {
-    // Legacy compact entry kept for compatibility; maps old tab indices to desk indices.
-    final desk = tabIndex + 1;
-    final icons = [Icons.summarize_outlined, Icons.description_outlined, Icons.fact_check_outlined, Icons.record_voice_over_outlined, Icons.library_books_outlined, Icons.forum_outlined];
-    return _deskNavEntry(theme, desk, icons[tabIndex.clamp(0, 5).toInt()], label, null);
   }
 
   Widget _buildDesktopRail(ThemeData theme) {
@@ -2192,29 +2068,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           const Divider(height: 16),
           InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap: () async {
-              final selectedSession = await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const HistoryView()),
-              );
-              if (selectedSession != null && selectedSession is MeetingSession) {
-                loadSession(selectedSession);
-                _selectDesk(1);
-              }
-            },
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              child: Row(
-                children: [
-                  Icon(Icons.archive_outlined, size: 19),
-                  SizedBox(width: 11),
-                  const Text('Archive', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                ],
-              ),
-            ),
-          ),
-          InkWell(
-            borderRadius: BorderRadius.circular(12),
             onTap: () => setState(() => _isMeetingCompactMode = !_isMeetingCompactMode),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
@@ -2229,6 +2082,292 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           ),
         ],
       ),
+    );
+  }
+
+  void _openSession(MeetingSession session) {
+    loadSession(session);
+  }
+
+  void _closeDetail() {
+    setState(() => _viewingSession = false);
+  }
+
+  /// Zoom-cloud-recording style detail: player, segmented
+  /// Transcript/Summary/Actions, Q&A behind the floating button.
+  Widget _buildSessionDetail(ThemeData theme) {
+    final s = _currentSession;
+    if (s == null) {
+      return EmptyState(
+        icon: Icons.video_library_outlined,
+        title: 'No session open',
+        body: 'Pick a session from Sessions, or record a new one in Meet.',
+        primaryLabel: 'Go to Meet',
+        onPrimary: () => _selectNav(0),
+      );
+    }
+    final title = _titleController.text.trim().isEmpty ? 'Untitled session' : _titleController.text.trim();
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(4, 8, 16, 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
+          ),
+          child: Row(
+            children: [
+              IconButton(icon: const Icon(Icons.arrow_back), tooltip: 'All sessions', onPressed: _closeDetail),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15), overflow: TextOverflow.ellipsis),
+                    Text(SessionWorkflow.hint(_currentStage), style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline)),
+                  ],
+                ),
+              ),
+              IconButton(icon: const Icon(Icons.edit_outlined, size: 18), tooltip: 'Rename session', onPressed: _renameSessionDialog, visualDensity: VisualDensity.compact),
+              const SizedBox(width: 4),
+              _continueButton(theme, _currentStage),
+            ],
+          ),
+        ),
+        _miniPlayer(theme),
+        _segmentedHeader(
+          theme,
+          const ['Transcript', 'Summary', 'Actions'],
+          const [Icons.description_outlined, Icons.summarize_outlined, Icons.fact_check_outlined],
+          _detailTab,
+          (v) => setState(() => _detailTab = v),
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: _detailTab,
+            children: [
+              _buildTranscriptTab(theme),
+              _buildSummaryTab(theme),
+              _buildTasksTab(theme),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _miniPlayer(ThemeData theme) {
+    final path = _recordedAudioPath ??
+        ((_currentSession?.audioPath?.isNotEmpty == true) ? _currentSession!.audioPath : null);
+    if (path == null || path.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: theme.colorScheme.primary.withValues(alpha: 0.14)),
+            child: IconButton(
+              icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, size: 17),
+              visualDensity: VisualDensity.compact,
+              onPressed: () async {
+                if (_isPlaying) {
+                  await _audioPlayer.pause();
+                } else {
+                  try {
+                    await _audioPlayer.setPlaybackRate(_playbackRate);
+                  } catch (_) {}
+                  await _audioPlayer.play(DeviceFileSource(path));
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+              ),
+              child: Slider(
+                value: _playbackPosition.inSeconds.toDouble().clamp(0.0, (_playbackDuration.inSeconds.toDouble() > 0 ? _playbackDuration.inSeconds.toDouble() : 1.0)).toDouble(),
+                min: 0.0,
+                max: _playbackDuration.inSeconds.toDouble() > 0 ? _playbackDuration.inSeconds.toDouble() : 1.0,
+                onChanged: (value) async {
+                  await _audioPlayer.seek(Duration(seconds: value.toInt()));
+                },
+              ),
+            ),
+          ),
+          Text(
+            '${formatMS(_playbackPosition.inSeconds)} / ${formatMS(_playbackDuration.inSeconds)}',
+            style: TextStyle(fontSize: 10.5, color: theme.colorScheme.outline, fontFeatures: const [FontFeature.tabularFigures()]),
+          ),
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: _cyclePlaybackRate,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '${_playbackRate.toStringAsFixed(_playbackRate == _playbackRate.roundToDouble() ? 0 : 2)}x',
+                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: theme.colorScheme.primary),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openChatSheet() {
+    if (_currentSession == null || _currentSession!.transcript.trim().isEmpty) {
+      _showSnackBar('Transcribe or paste notes first, then ask questions.');
+      return;
+    }
+    final theme = Theme.of(context);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SizedBox(
+        height: MediaQuery.of(context).size.height * 0.82,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+              child: Row(
+                children: [
+                  const Expanded(child: Text('Ask about this session', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
+                  IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+                ],
+              ),
+            ),
+            Expanded(child: _buildChatTab(theme)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<MeetingSession> _allSessionsCache = [];
+  bool _loadingAllSessions = false;
+
+  Future<void> _loadAllSessions() async {
+    setState(() => _loadingAllSessions = true);
+    try {
+      final sessions = await SessionRepository().loadAllSessions();
+      if (!mounted) return;
+      setState(() {
+        _allSessionsCache = sessions;
+        _loadingAllSessions = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingAllSessions = false);
+    }
+  }
+
+  /// Cross-session task inbox (Zoom-tasks style): every bench task from
+  /// every saved session, toggleable in place.
+  Widget _buildAllTasksTab(ThemeData theme) {
+    final items = <({ActionItem item, MeetingSession session})>[];
+    for (final s in _allSessionsCache) {
+      for (final a in s.actionItems) {
+        items.add((item: a, session: s));
+      }
+    }
+    final openCount = items.where((e) => !e.item.isCompleted).length;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 12, 6),
+          child: PageHeader(
+            title: 'Tasks',
+            subtitle: items.isEmpty
+                ? 'Bench tasks from every session land here'
+                : '$openCount open · ${items.length} total across ${_allSessionsCache.length} sessions',
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.refresh_outlined, size: 19),
+                tooltip: 'Refresh',
+                onPressed: _loadAllSessions,
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _loadingAllSessions
+              ? const Center(child: CircularProgressIndicator())
+              : items.isEmpty
+                  ? const EmptyState(
+                      icon: Icons.fact_check_outlined,
+                      title: 'No tasks yet',
+                      body: 'Analyze a session and its bench tasks will appear here, grouped across your whole archive.',
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                      itemCount: items.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final entry = items[index];
+                        final item = entry.item;
+                        return LabCard(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Checkbox(
+                                value: item.isCompleted,
+                                visualDensity: VisualDensity.compact,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                                onChanged: (val) async {
+                                  setState(() {
+                                    item.isCompleted = val ?? false;
+                                  });
+                                  await SessionRepository().saveSession(entry.session);
+                                },
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item.task,
+                                      style: TextStyle(
+                                        decoration: item.isCompleted ? TextDecoration.lineThrough : null,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13.5,
+                                        height: 1.4,
+                                        color: item.isCompleted ? theme.colorScheme.outline : theme.colorScheme.onSurface,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    InkWell(
+                                      onTap: () => _openSession(entry.session),
+                                      child: Text(
+                                        '${entry.session.title} · ${item.assignee}',
+                                        style: TextStyle(fontSize: 11.5, color: theme.colorScheme.secondary, fontWeight: FontWeight.w600),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+        ),
+      ],
     );
   }
 
@@ -2251,68 +2390,36 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           wide ? _buildDesktopSidebar(context, theme) : _buildDesktopRail(theme),
-          Expanded(
-            child: Column(
-              children: [
-                _buildSessionHeader(theme),
-                Expanded(
-                  child: AnimatedBuilder(
-                    animation: _tabController,
-                    builder: (context, _) => _deskIndex == 0
-                  ? SingleChildScrollView(
-                      padding: const EdgeInsets.all(20),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 640),
-                          child: _buildRecordingControlPanel(theme),
-                        ),
-                      ),
-                    )
-                  : TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildSummaryTab(theme),
-                        _buildTranscriptTab(theme),
-                        _buildTasksTab(theme),
-                        _buildSpeakersTab(theme),
-                        _buildLibraryTab(theme),
-                        _buildChatTab(theme),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          Expanded(child: _buildNavBody(theme)),
         ],
       );
     }
 
-    Widget withHeader(Widget body) => Column(
-          children: [
-            _buildSessionHeader(theme),
-            Expanded(child: body),
-          ],
-        );
-    switch (_mobileNavIndex) {
+    return _buildNavBody(theme);
+  }
+
+  Widget _buildNavBody(ThemeData theme) {
+    if (_viewingSession) {
+      return _buildSessionDetail(theme);
+    }
+    switch (_navIndex) {
       case 0:
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
-          child: _buildRecordingControlPanel(theme),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 680),
+              child: _buildRecordingControlPanel(theme),
+            ),
+          ),
         );
       case 1:
-        return withHeader(_buildMobileNotes(theme));
+        return HistoryView(onOpen: _openSession);
       case 2:
-        return withHeader(_buildMobileTasks(theme));
+        return _buildAllTasksTab(theme);
       case 3:
-        return withHeader(_buildScienceMobile(theme));
-      case 4:
-        return withHeader(_buildChatTab(theme));
       default:
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: _buildRecordingControlPanel(theme),
-        );
+        return const SettingsView(embedded: true);
     }
   }
 
@@ -2339,46 +2446,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       ),
     );
   }
-
-  Widget _buildMobileNotes(ThemeData theme) {
-    return Column(
-      children: [
-        _segmentedHeader(
-          theme,
-          ['Overview', 'Transcript'],
-          [Icons.summarize_outlined, Icons.description_outlined],
-          _mobileNotesTab,
-          (v) {
-            setState(() => _mobileNotesTab = v);
-            _syncTab(v == 0 ? 0 : 1);
-          },
-        ),
-        Expanded(child: _mobileNotesTab == 0 ? _buildSummaryTab(theme) : _buildTranscriptTab(theme)),
-      ],
-    );
-  }
-
-  Widget _buildMobileTasks(ThemeData theme) {
-    final protoCount = _currentSession?.actionItems.length ?? 0;
-    final spkCount = _currentSession?.speakerTurns.length ?? 0;
-    return Column(
-      children: [
-        _segmentedHeader(
-          theme,
-          ['Protocols ($protoCount)', 'Speakers ($spkCount)'],
-          [Icons.fact_check_outlined, Icons.record_voice_over_outlined],
-          _mobileTasksTab,
-          (v) {
-            setState(() => _mobileTasksTab = v);
-            _syncTab(v == 0 ? 2 : 3);
-          },
-        ),
-        Expanded(child: _mobileTasksTab == 0 ? _buildTasksTab(theme) : _buildSpeakersTab(theme)),
-      ],
-    );
-  }
-
-  // --- Meeting Compact Deck Mode ---
 
   Widget _buildCompactMeetingDeck(ThemeData theme) {
     return LabCard(
@@ -2407,7 +2474,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               IconButton(
                 icon: const Icon(Icons.open_in_full, size: 18),
                 tooltip: 'Expand Full Dashboards',
-                onPressed: () => setState(() => _isMeetingCompactMode = false),
+                onPressed: () => setState(() {
+                  _isMeetingCompactMode = false;
+                  if (_currentSession != null) _viewingSession = true;
+                }),
               ),
             ],
           ),
@@ -2741,34 +2811,25 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   void _goRecord() {
-    setState(() => _isMeetingCompactMode = false);
-    if (MediaQuery.of(context).size.width >= 900) {
-      _selectDesk(0);
-    } else {
-      setState(() => _mobileNavIndex = 0);
-    }
+    setState(() {
+      _isMeetingCompactMode = false;
+      _navIndex = 0;
+      _viewingSession = false;
+    });
   }
 
   void _goActions() {
-    if (MediaQuery.of(context).size.width >= 900) {
-      _selectDesk(3);
-    } else {
-      setState(() {
-        _mobileTasksTab = 0;
-        _mobileNavIndex = 2;
-      });
-    }
+    setState(() {
+      _viewingSession = true;
+      _detailTab = 2;
+    });
   }
 
   void _goOverview() {
-    if (MediaQuery.of(context).size.width >= 900) {
-      _selectDesk(1);
-    } else {
-      setState(() {
-        _mobileNotesTab = 0;
-        _mobileNavIndex = 1;
-      });
-    }
+    setState(() {
+      _viewingSession = true;
+      _detailTab = 1;
+    });
   }
 
   Future<void> _newSession() async {
@@ -2790,8 +2851,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _titleController.text = '';
       _transcriptEditController.clear();
       _chatController.clear();
-      _pubmedSearchController.clear();
-      _searchResultsPubMed.clear();
       _translatedTranscript = null;
       _showTranslatedTranscript = false;
       _translatedSummary = null;
@@ -2801,6 +2860,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _transcriptSpeaker = null;
       _taskFilter = 0;
       _isMeetingCompactMode = false;
+      _viewingSession = false;
     });
     _goRecord();
   }
@@ -2808,75 +2868,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   /// Persistent session header: title, workflow stepper, and the single
   /// primary Continue action for the current stage. Rendered above every
   /// review tab (and the desktop deck) so the workflow never feels lost.
-  Widget _buildSessionHeader(ThemeData theme) {
-    final stage = _currentStage;
-    final title = _titleController.text.trim().isEmpty ? 'Untitled session' : _titleController.text.trim();
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final narrow = constraints.maxWidth < 560;
-          final stepper = SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: StageStepper(current: stage),
-          );
-          final cont = _continueButton(theme, stage);
-          if (narrow) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15), overflow: TextOverflow.ellipsis),
-                          Text(SessionWorkflow.hint(stage), style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline)),
-                        ],
-                      ),
-                    ),
-                    IconButton(icon: const Icon(Icons.edit_outlined, size: 17), tooltip: 'Rename session', onPressed: _renameSessionDialog, visualDensity: VisualDensity.compact),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                stepper,
-                const SizedBox(height: 8),
-                cont,
-              ],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15), overflow: TextOverflow.ellipsis)),
-                        IconButton(icon: const Icon(Icons.edit_outlined, size: 16), tooltip: 'Rename session', onPressed: _renameSessionDialog, visualDensity: VisualDensity.compact),
-                      ],
-                    ),
-                    Text(SessionWorkflow.hint(stage), style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(child: stepper),
-              const SizedBox(width: 16),
-              cont,
-            ],
-          );
-        },
-      ),
-    );
-  }
-
   Widget _continueButton(ThemeData theme, SessionStage stage) {
     String label;
     VoidCallback? action;
@@ -3282,7 +3273,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     final transcript = _currentSession?.transcript ?? '';
     final turns = _currentSession?.speakerTurns ?? [];
 
-    if (transcript.isEmpty && turns.isEmpty) {
+    if (transcript.trim().isEmpty && turns.every((e) => e.text.trim().isEmpty)) {
       return EmptyState(
         icon: Icons.description_outlined,
         title: 'No transcript yet',
@@ -3297,6 +3288,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     final speakers = turns.map((e) => e.speakerName).toSet().toList();
     final q = _transcriptQuery.trim().toLowerCase();
     final visible = turns.where((turn) {
+      if (turn.text.trim().isEmpty) return false;
       if (_transcriptSpeaker != null && turn.speakerName != _transcriptSpeaker) return false;
       if (q.isNotEmpty && !turn.text.toLowerCase().contains(q)) return false;
       return true;
@@ -3560,7 +3552,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     final colors = _speakerColorMap();
     final uniqueSpeakers = talk.keys.toList();
 
-    if (summary == null && transcript.isEmpty && turns.isEmpty) {
+    if (summary == null && transcript.trim().isEmpty && turns.every((e) => e.text.trim().isEmpty)) {
       final hasAudio = _recordedAudioPath != null || (_currentSession?.audioPath?.isNotEmpty == true);
       return EmptyState(
         icon: Icons.science_outlined,
@@ -3807,6 +3799,40 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                             Icon(Icons.gavel_outlined, size: 17, color: theme.colorScheme.secondary),
                             const SizedBox(width: 10),
                             Expanded(child: Text(decision, style: const TextStyle(fontSize: 13.2, height: 1.5))),
+                          ],
+                        ),
+                      ),
+                    )),
+              if (_currentSession!.citations.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                SectionLabel('References & further reading', icon: Icons.library_books_outlined),
+                const SizedBox(height: 8),
+                ..._currentSession!.citations.map((cite) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: LabCard(
+                        onTap: () => _showArticleReader(cite),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    cite.title,
+                                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, height: 1.4),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${cite.journal} (${cite.pubYear})',
+                                    style: TextStyle(fontSize: 11.5, color: theme.colorScheme.outline),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            StatusPill(icon: Icons.tag_outlined, label: cite.pmid, color: theme.colorScheme.secondary),
                           ],
                         ),
                       ),
@@ -4330,116 +4356,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   // --- Glossary tab ---
-
-  Widget _searchBar(ThemeData theme, TextEditingController controller, String hint, bool loading, VoidCallback onSearch, VoidCallback onClear) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border(bottom: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6))),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: controller,
-              onSubmitted: (_) => onSearch(),
-              onChanged: (_) { if (mounted) setState(() {}); },
-              decoration: InputDecoration(
-                hintText: hint,
-                prefixIcon: const Icon(Icons.search, size: 18),
-                suffixIcon: controller.text.isNotEmpty
-                    ? IconButton(icon: const Icon(Icons.clear, size: 16), onPressed: onClear)
-                    : null,
-                isDense: true,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: loading ? null : onSearch,
-            icon: loading
-                ? const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.science_outlined, size: 15),
-            label: const Text('Lookup'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- Citations tab ---
-
-  Widget _buildCitationsTab(ThemeData theme) {
-    final rawCitations = _currentSession?.citations ?? [];
-    final citations = _searchResultsPubMed.isNotEmpty ? _searchResultsPubMed : rawCitations;
-
-    return Column(
-      children: [
-        _searchBar(
-          theme,
-          _pubmedSearchController,
-          'Paper, trial or PMID · e.g. KRAS G12C, 33208354…',
-          _isSearchingPubmed,
-          () => _searchPubMedOnDemand(_pubmedSearchController.text),
-          () {
-            _pubmedSearchController.clear();
-            setState(() => _searchResultsPubMed.clear());
-          },
-        ),
-        Expanded(
-          child: citations.isEmpty
-              ? const EmptyState(
-                  icon: Icons.library_books_outlined,
-                  title: 'Literature shelf',
-                  body: 'Search NCBI PubMed above for trials and mechanisms — or run AI synthesis to auto-resolve citations.',
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.all(20),
-                  itemCount: citations.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    final cite = citations[index];
-                    return LabCard(
-                      onTap: () => _showArticleReader(cite),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(child: Text(cite.title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, height: 1.45))),
-                              const SizedBox(width: 10),
-                              StatusPill(icon: Icons.tag_outlined, label: cite.pmid, color: theme.colorScheme.secondary),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(cite.authors, style: theme.textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic)),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Expanded(child: Text('${cite.journal} (${cite.pubYear})${cite.doi != null ? ' · DOI ${cite.doi}' : ''}', style: TextStyle(color: theme.colorScheme.outline, fontSize: 12))),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.chrome_reader_mode_outlined, size: 14, color: theme.colorScheme.primary),
-                                  const SizedBox(width: 4),
-                                  Text('Read', style: TextStyle(fontSize: 11.5, color: theme.colorScheme.primary, fontWeight: FontWeight.w800)),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-
-  // --- Intelligence Tab 5: Grounded Research Q&A ---
 
   Widget _buildChatTab(ThemeData theme) {
     final history = _currentSession?.chatHistory ?? [];

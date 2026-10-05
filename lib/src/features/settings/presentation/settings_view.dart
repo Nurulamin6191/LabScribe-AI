@@ -6,7 +6,9 @@ import '../../intelligence/services/meeting_intelligence_service.dart';
 /// Engine settings: on-device speech model choice and how-it-works notes.
 /// No endpoints, keys, or URLs — install-and-use by design.
 class SettingsView extends StatefulWidget {
-  const SettingsView({super.key});
+  /// When true, renders just the content (for embedding as a tab).
+  final bool embedded;
+  const SettingsView({super.key, this.embedded = false});
 
   @override
   State<SettingsView> createState() => _SettingsViewState();
@@ -123,18 +125,8 @@ class _SettingsViewState extends State<SettingsView> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Row(
-          children: [
-            BrandMark(size: 30),
-            SizedBox(width: 10),
-            Text('Engine'),
-          ],
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+    final body = ListView(
+      padding: const EdgeInsets.all(20),
         children: [
           const PageHeader(
             title: 'On-device engine',
@@ -285,6 +277,19 @@ class _SettingsViewState extends State<SettingsView> {
           ),
         ],
       ),
+    );
+    if (widget.embedded) return body;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Row(
+          children: [
+            BrandMark(size: 30),
+            SizedBox(width: 10),
+            Text('Engine'),
+          ],
+        ),
+      ),
+      body: body,
     );
   }
 

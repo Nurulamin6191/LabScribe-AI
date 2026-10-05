@@ -19,35 +19,24 @@ owners and completion states.
 
 ## 2. Information architecture
 
-One continuous session lifecycle, always visible in the persistent header:
+Bottom navigation (Zoom/Meet style) with four destinations:
 
 ```
-Record → (overview) → Transcribe → Synthesize → Review → Export
+Meet (record · import · mic test) → Sessions (searchable archive)
+→ Tasks (cross-session inbox) → Engine (models + how-it-works)
 ```
 
-The header shows the session title (tap the pencil to rename), a
-five-step `StageStepper` (`lib/src/core/workflow/session_workflow.dart`),
-and a single Continue button that always offers the next valid action:
-Start recording → Transcribe & analyze → Generate insights → Review tasks
-→ Export notes → New session. Finishing recording prompts transcription;
-finishing analysis lands on the Overview; every export advances the stage.
+Opening a session shows a Zoom-cloud-recording style detail: audio
+player, Transcript/Summary/Actions segments, and Q&A behind a floating
+button. References live at the bottom of Summary; speakers are inline
+in the transcript. One continuous lifecycle (`session_workflow.dart`)
+drives a Continue button in every header: Start recording → Transcribe
+& analyze → Generate insights → Review tasks → Export notes → New
+session. Finishing recording prompts transcription; finishing analysis
+lands on the session; every export advances the stage.
 
-Full destination map (header sits above all of these):
-
-```
-Record (capture deck: mic, timer, tags, processing)
-Overview (stats · talk time · key moments · synthesis)
-Transcript (search · speaker filter · timestamped turns)
-Actions (progress · All/Open/Done/High filters)
-Speakers (talk-time bar · per-speaker aggregates · turn timeline)
-Library (compounds via PubChem + atlas · papers via PubMed + reader)
-Ask (transcript-grounded Q&A)
-Archive (search · type filters · sort)
-```
-
-Desktop ≥1200px shows a full sidebar; 900–1200px collapses to an icon rail;
-below 900px a 5-destination bottom bar groups related tabs
-(Overview+Transcript, Actions+Speakers, Library).
+Desktop ≥1200px shows a full sidebar; 900–1200px collapses to an icon
+rail; below 900px the same four destinations sit in the bottom bar.
 
 ## 3. Design tokens
 

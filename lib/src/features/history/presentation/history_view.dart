@@ -12,7 +12,10 @@ import '../../export/services/export_service.dart';
 /// metadata badges (redaction flag, SHA-256 reference, citations),
 /// and swipe-to-delete.
 class HistoryView extends StatefulWidget {
-  const HistoryView({super.key});
+  /// When provided (Sessions tab), tapping a session calls this instead of
+  /// popping the route with a result.
+  final ValueChanged<MeetingSession>? onOpen;
+  const HistoryView({super.key, this.onOpen});
 
   @override
   State<HistoryView> createState() => _HistoryViewState();
@@ -84,6 +87,14 @@ class _HistoryViewState extends State<HistoryView> {
         list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     }
     return list;
+  }
+
+  void _open(MeetingSession session) {
+    if (widget.onOpen != null) {
+      widget.onOpen!(session);
+    } else {
+      Navigator.pop(context, session);
+    }
   }
 
   Future<void> _deleteSession(String id) async {
@@ -279,7 +290,7 @@ class _HistoryViewState extends State<HistoryView> {
                         );
                       },
                       child: LabCard(
-                        onTap: () => Navigator.pop(context, session),
+                        onTap: () => _open(session),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -324,7 +335,7 @@ class _HistoryViewState extends State<HistoryView> {
                                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                             onSelected: (v) async {
                                               if (v == 'open' && context.mounted) {
-                                                Navigator.pop(context, session);
+                                                _open(session);
                                               } else if (v == 'rename') {
                                                 await _renameSession(session);
                                               } else if (v == 'share') {
