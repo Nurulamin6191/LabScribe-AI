@@ -5,6 +5,8 @@ import 'package:dio/dio.dart';
 import 'package:whisper_ggml/whisper_ggml.dart';
 import '../../../models/meeting_session.dart';
 import '../../public_apis/services/public_api_service.dart';
+import 'package:path_provider/path_provider.dart';
+import '../../../core/config_service.dart';
 import '../../audio/services/audio_chunker_service.dart';
 import '../../clinical/services/phi_scrubber_service.dart';
 import '../../audio/services/wav_probe.dart';
@@ -125,7 +127,10 @@ class MeetingIntelligenceService {
     final lang = _whisperLang(languageHint);
     final modelName = _config.whisperModel;
 
-    onProgress?.call('Preparing $modelName speech model (internet needed once to download it)...');
+    await ensureModelReady(
+      onStatus: onProgress,
+      onProgress: (p) => onProgress?.call('Preparing model — $p%...'),
+    );
     try {
       return await _runTranscription(
         model: _whisperModel(),
@@ -204,8 +209,8 @@ class MeetingIntelligenceService {
     );
   }
 
-  WhisperModel _whisperModel() {
-    switch (_config.whisperModel) {
+  WhisperModel _whisperModel([String? name]) {
+    switch (name ?? _config.whisperModel) {
       case 'tiny':
         return WhisperModel.tiny;
       case 'small':
@@ -213,6 +218,41 @@ class MeetingIntelligenceService {
       case 'base':
       default:
         return WhisperModel.base;
+    }
+  }
+
+  /// Downloads (once) and validates the speech model by transcribing a
+  /// second of generated silence. Any completed call — even with empty
+  /// text, which is correct for silence — proves the model is cached and
+  /// working. Call this during setup instead of discovering a broken
+  /// engine mid-meeting.
+  Future<void> ensureModelReady({
+    String? modelName,
+    void Function(String status)? onStatus,
+    void Function(int percent)? onProgress,
+    bool force = false,
+  }) async {
+    final name = modelName ?? _config.whisperModel;
+    if (!force && ConfigService().isModelWarmed(name)) return;
+    final size = ConfigService.whisperSizes[name] ?? '';
+    onStatus?.call('Downloading $name model ($size) — one time only...');
+    final dir = await getTemporaryDirectory();
+    final silentPath = await WavProbe.writeSilenceWav(dir);
+    try {
+      await WhisperController().transcribe(
+        model: _whisperModel(name),
+        audioPath: silentPath,
+        lang: 'en',
+        initialPrompt: 'test',
+        withSegments: false,
+        onProgress: (p) => onProgress?.call(p),
+      );
+      await ConfigService().markModelWarmed(name);
+      onStatus?.call('Model ready.');
+    } finally {
+      try {
+        await File(silentPath).delete();
+      } catch (_) {}
     }
   }
 

@@ -32,6 +32,43 @@ class WavInfo {
 }
 
 class WavProbe {
+  /// Writes [seconds] of digital silence as 16 kHz mono 16-bit WAV and
+  /// returns the file path. Used to warm up / validate the on-device
+  /// speech engine: transcribing silence must complete (with empty text),
+  /// which proves the model is downloaded and working.
+  static Future<String> writeSilenceWav(Directory dir, {int seconds = 1}) async {
+    const sampleRate = 16000;
+    final dataLen = sampleRate * seconds * 2;
+    final totalLen = 44 + dataLen;
+    final bytes = ByteData(totalLen);
+
+    void writeTag(int offset, String tag) {
+      for (int i = 0; i < tag.length; i++) {
+        bytes.setUint8(offset + i, tag.codeUnitAt(i));
+      }
+    }
+
+    writeTag(0, 'RIFF');
+    bytes.setUint32(4, 36 + dataLen, Endian.little);
+    writeTag(8, 'WAVE');
+    writeTag(12, 'fmt ');
+    bytes.setUint32(16, 16, Endian.little);
+    bytes.setUint16(20, 1, Endian.little); // PCM
+    bytes.setUint16(22, 1, Endian.little); // mono
+    bytes.setUint32(24, sampleRate, Endian.little);
+    bytes.setUint32(28, sampleRate * 2, Endian.little); // byte rate
+    bytes.setUint16(32, 2, Endian.little); // block align
+    bytes.setUint16(34, 16, Endian.little); // bits per sample
+    writeTag(36, 'data');
+    bytes.setUint32(40, dataLen, Endian.little);
+    // PCM bytes after offset 44 stay zero = silence.
+
+    final path =
+        '${dir.path}/warmup_silence_${DateTime.now().millisecondsSinceEpoch}.wav';
+    await File(path).writeAsBytes(bytes.buffer.asUint8List());
+    return path;
+  }
+
   /// Returns null when [file] is not a parseable RIFF/WAVE file.
   static Future<WavInfo?> probe(File file) async {
     try {

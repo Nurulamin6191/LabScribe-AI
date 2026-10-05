@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/config_service.dart';
 import '../../../core/widgets/labscribe_ui.dart';
+import '../../intelligence/services/meeting_intelligence_service.dart';
 
 /// Engine settings: on-device speech model choice and how-it-works notes.
 /// No endpoints, keys, or URLs — install-and-use by design.
@@ -13,6 +14,10 @@ class SettingsView extends StatefulWidget {
 
 class _SettingsViewState extends State<SettingsView> {
   String _whisperModel = 'base';
+  late final MeetingIntelligenceService _engine;
+  bool _preparing = false;
+  String _prepStatus = '';
+  int? _prepPct;
 
   static const _models = [
     ('tiny', 'Tiny · 75 MB', 'Fastest. Good for quick notes on any device.'),
@@ -24,15 +29,64 @@ class _SettingsViewState extends State<SettingsView> {
   void initState() {
     super.initState();
     _whisperModel = ConfigService().whisperModel;
+    _engine = MeetingIntelligenceService(config: ConfigService().getAiConfig());
   }
 
   Future<void> _saveModel(String model) async {
     setState(() => _whisperModel = model);
     await ConfigService().setWhisperModel(model);
+    _engine.updateConfig(ConfigService().getAiConfig());
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Speech model saved. It downloads once on next transcription.')),
+        const SnackBar(content: Text('Speech model saved. Download it below to get ready.')),
       );
+    }
+  }
+
+  /// Downloads + validates the selected model right now, with progress —
+  /// the AnythingLLM-style "prepare during setup" flow.
+  Future<void> _downloadNow() async {
+    if (_preparing) return;
+    setState(() {
+      _preparing = true;
+      _prepPct = null;
+      _prepStatus = 'Starting download...';
+    });
+    try {
+      await _engine.ensureModelReady(
+        modelName: _whisperModel,
+        force: true,
+        onStatus: (s) {
+          if (mounted) setState(() => _prepStatus = s);
+        },
+        onProgress: (p) {
+          if (mounted) {
+            setState(() {
+              _prepPct = p;
+              _prepStatus = 'Preparing model — $p%...';
+            });
+          }
+        },
+      );
+      if (mounted) {
+        setState(() {
+          _preparing = false;
+          _prepStatus = 'Ready on this device.';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Speech model ready. Transcription now works offline.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _preparing = false;
+          _prepStatus = 'Download failed — connect to the internet and retry.';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Download failed: $e')),
+        );
+      }
     }
   }
 
@@ -95,9 +149,59 @@ class _SettingsViewState extends State<SettingsView> {
                               style: const TextStyle(fontSize: 12.5, height: 1.4),
                             ),
                           ),
+                          if (m.$1 == ConfigService.recommendedWhisperModel)
+                            Container(
+                              margin: const EdgeInsets.only(left: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary,
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                              child: const Text('RECOMMENDED', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white)),
+                            ),
                         ],
                       ),
                     )),
+                const SizedBox(height: 12),
+                const Divider(height: 8),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      ConfigService().isModelWarmed(_whisperModel) && !_preparing
+                          ? Icons.check_circle
+                          : Icons.cloud_download_outlined,
+                      size: 17,
+                      color: ConfigService().isModelWarmed(_whisperModel) && !_preparing
+                          ? Colors.green
+                          : theme.colorScheme.outline,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _preparing
+                            ? _prepStatus
+                            : (ConfigService().isModelWarmed(_whisperModel)
+                                ? 'Downloaded and ready on this device.'
+                                : 'Not downloaded yet — needs internet once.'),
+                        style: const TextStyle(fontSize: 12.5, height: 1.4),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_preparing && _prepPct != null) ...[
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(value: (_prepPct! / 100).clamp(0.0, 1.0)),
+                ],
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _preparing ? null : _downloadNow,
+                    icon: const Icon(Icons.download_outlined, size: 16),
+                    label: Text(ConfigService().isModelWarmed(_whisperModel) ? 'Re-download / verify' : 'Download now'),
+                  ),
+                ),
               ],
             ),
           ),

@@ -475,6 +475,78 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   /// Slide / Lab Figure Attachment File Picker
+  /// Records 5 seconds, probes the WAV header, and reports format/size —
+  /// answers "is my microphone actually producing a usable file?" without
+  /// running the speech engine at all.
+  Future<void> _testMic() async {
+    if (_recordingState == RecordingState.recording) {
+      _showSnackBar('Stop the current recording first.');
+      return;
+    }
+    try {
+      if (!await _audioRecorder.hasPermission()) {
+        _showSnackBar('Microphone permission denied.');
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/mic_test_${DateTime.now().millisecondsSinceEpoch}.wav';
+      await _audioRecorder.start(
+        RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+          device: _selectedInputDevice,
+        ),
+        path: path,
+      );
+      _showSnackBar('Recording 5-second mic test — speak now.');
+      await Future.delayed(const Duration(seconds: 5));
+      await _audioRecorder.stop();
+      final file = File(path);
+      if (!mounted) return;
+      if (!await file.exists()) {
+        _showSnackBar('Mic test produced no file — check microphone access.');
+        return;
+      }
+      final bytes = await file.length();
+      final info = await WavProbe.probe(file);
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Mic test result', style: TextStyle(fontSize: 17)),
+          content: Text(
+            info == null
+                ? 'The test file (${(bytes / 1024).toStringAsFixed(1)} KB) is not a readable WAV. '
+                    'Your recorder may not support WAV output on this device.'
+                : 'Format: ${info.formatLabel}\n'
+                    'Length: ~${info.durationSec.toStringAsFixed(0)}s (${(bytes / 1024).toStringAsFixed(1)} KB)\n'
+                    '${info.isWhisperReady ? 'Ready for on-device transcription.' : 'Unexpected format — transcription may fail; re-record or convert to 16 kHz mono.'}',
+            style: const TextStyle(fontSize: 13, height: 1.5),
+          ),
+          actions: [
+            TextButton.icon(
+              icon: const Icon(Icons.play_arrow, size: 16),
+              label: const Text('Play it'),
+              onPressed: () async {
+                try {
+                  await _audioPlayer.play(DeviceFileSource(path));
+                } catch (e) {
+                  _showSnackBar('Playback failed: $e');
+                }
+              },
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      _showSnackBar('Mic test failed: $e');
+    }
+  }
+
   Future<void> _attachFigureDialog() async {
     final captionController = TextEditingController();
     String? selectedFilePath;
@@ -3135,6 +3207,16 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               _buildLanguageSelector(theme),
               const SizedBox(height: 8),
               _languageSegmented(theme),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: (_recordingState == RecordingState.recording) ? null : _testMic,
+                  icon: const Icon(Icons.hearing_outlined, size: 14),
+                  label: const Text('Test mic (5s)', style: TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                ),
+              ),
             ],
           ),
         ),
