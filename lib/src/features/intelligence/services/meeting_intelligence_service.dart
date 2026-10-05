@@ -445,11 +445,6 @@ Analyze the scientific session transcript and return a strictly valid JSON objec
       "speaker": "Speaker who assigned or agreed to the task, or null"
     }
   ],
-  "technicalKeywords": [
-    "chemical_or_drug_name",
-    "biomarker_or_gene",
-    "assay_or_biological_term"
-  ],
   "literatureQueries": [
     "Author, gene, or study referenced (e.g., 'Baselga PI3K inhibitor trial', 'KRAS G12C sotorasib resistance 2023')"
   ]
@@ -458,10 +453,9 @@ Analyze the scientific session transcript and return a strictly valid JSON objec
 Scientific Processing Directives:
 1. Preserve precise scientific capitalization: gene symbols in UPPERCASE (e.g. EGFR, TP53, MYC), proteins/assays standard (e.g. p53, Western blot, RNA-Seq).
 2. Distinguish statistical significance: identify mentioned p-values, sample sizes (n=), controls, and confidence intervals.
-3. Extract 4-8 chemical compounds, drugs, reagents, or specialized biological terms in "technicalKeywords" to cross-reference with PubChem.
-4. Extract 1-3 paper/author queries in "literatureQueries" to resolve via PubMed.
-5. Conversational Diarization: Analyze speaker shifts and dialogue flow in the transcript. Segment into "speakerTurns" with startSeconds, endSeconds, speakerId ("Speaker 1", "Speaker 2", etc.), speakerName (infer Dr. Name or Role if mentioned in context, otherwise default to speakerId), and text.
-6. Output raw JSON only. Do not add markdown code fences or explanatory preamble.
+3. Extract 1-3 paper/author queries in "literatureQueries" to resolve via PubMed.
+4. Conversational Diarization: Analyze speaker shifts and dialogue flow in the transcript. Segment into "speakerTurns" with startSeconds, endSeconds, speakerId ("Speaker 1", "Speaker 2", etc.), speakerName (infer Dr. Name or Role if mentioned in context, otherwise default to speakerId), and text.
+5. Output raw JSON only. Do not add markdown code fences or explanatory preamble.
 ''';
 
     // Hierarchical Map-Reduce summarization for long transcripts (> 5,000 words / ~7,500 tokens)
@@ -520,7 +514,6 @@ $effectiveContext
     final summary = SummaryResult.fromJson(parsed['summary'] ?? {});
     final rawTasks = (parsed['actionItems'] as List?) ?? [];
     final actionItems = rawTasks.map((t) => ActionItem.fromJson(t)).toList();
-    final rawKeywords = List<String>.from(parsed['technicalKeywords'] ?? []);
     final rawLiterature = List<String>.from(parsed['literatureQueries'] ?? []);
 
     final rawSpeakerTurns = (parsed['speakerTurns'] as List?) ?? [];
@@ -532,10 +525,10 @@ $effectiveContext
       speakerTurns = _synthesizeFallbackSpeakerTurns(transcript);
     }
 
-    // 1. Enrich with PubChem NIH API & Free Dictionary API cascade
-    final glossary = await _publicApiService.lookupBatchWords(rawKeywords);
+    // Compound glossary removed (Library shows papers only).
+    const glossary = <GlossaryTerm>[];
 
-    // 2. Resolve PubMed citations via NCBI E-Utilities
+    // Resolve PubMed citations via NCBI E-Utilities
     final citations = await _publicApiService.resolveLiteratureCitations(rawLiterature);
 
     return (

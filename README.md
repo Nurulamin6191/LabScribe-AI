@@ -122,8 +122,8 @@ self-test under the microphone selector).
 
 No API keys, no terminal, no URLs, no accounts. Install and use:
 
-1. **Record** — press the red button. Meetings save as 16 kHz WAV, the
-   exact format the on-device engine reads.
+1. **Record** — press the red button. Mobile saves compact audio
+   (converted automatically); desktop saves engine-ready 16 kHz WAV.
 2. **Transcribe** — press **Process AI insights**. The Whisper speech
    model downloads once on first use (Tiny 75 MB / Base 150 MB /
    Small 460 MB, chosen under Engine), then works fully offline.
@@ -133,9 +133,11 @@ No API keys, no terminal, no URLs, no accounts. Install and use:
    everything else stays on your device.
 
 Notes:
-- Imported MP3/M4A files transcribe directly on Android. On
-  Windows/Linux they need FFmpeg installed (`sudo apt install ffmpeg`),
-  or import a WAV file instead.
+- Imported MP3/M4A files transcribe directly on Android and macOS
+  (automatic conversion). On Windows/Linux they need FFmpeg installed
+  (`sudo apt install ffmpeg`), or import a WAV file instead.
+- A 5-second **Test mic** button under the microphone selector verifies
+  your recorder writes a usable file before a real session.
 - If no speech is found (silent audio), analysis stops with a clear
   message instead of invented text. See `docs/PIPELINE.md`.
 

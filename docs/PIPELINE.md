@@ -6,7 +6,8 @@ rules that keep the app honest about where every word came from.
 ## 1. Transcript sources (in priority order)
 
 1. **On-device Whisper** (`whisper_ggml`, all release platforms).
-   Recordings are saved as 16 kHz mono WAV, transcribed locally with a
+   Mobile recordings save as compact AAC (converted automatically);
+   desktop saves 16 kHz mono WAV directly. Both transcribe locally with a
    biomedical vocabulary bias. The model downloads once on first use and
    stays cached; later runs are fully offline. Long recordings split into
    sequential parts with rolling context. Non-WAV imports convert via the

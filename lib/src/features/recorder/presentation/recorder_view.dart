@@ -71,11 +71,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
   
-  // In-App On-Demand Search Controllers (Zero External Browser Needed)
-  final TextEditingController _pubchemSearchController = TextEditingController();
-  bool _isSearchingPubchem = false;
-  List<GlossaryTerm> _searchResultsPubChem = [];
-
   final TextEditingController _pubmedSearchController = TextEditingController();
   bool _isSearchingPubmed = false;
   List<PubMedCitation> _searchResultsPubMed = [];
@@ -94,14 +89,12 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   bool _isWaitingForAiChatResponse = false;
   bool _isMeetingCompactMode = false;
 
-  // Language & Multilingual Optimization (Hindi, English, Hinglish)
-  String _selectedLanguage = 'auto'; // 'auto', 'en', 'hi', 'hinglish'
+  // Transcription always runs in auto-detect mode.
   String? _translatedTranscript;
   bool _isTranslatingTranscript = false;
   bool _isTranscriptEditMode = false;
   final TextEditingController _transcriptEditController = TextEditingController();
   bool _showTranslatedTranscript = false;
-  int _scienceSubTabIndex = 0;
   bool _isTranslatingSummary = false;
   String? _translatedSummary;
   bool _showTranslatedSummary = false;
@@ -115,7 +108,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _recordingState = RecordingState.stopped;
       _statusMessage = 'Loaded saved session from local storage.';
       _enableClinicalDeIdentification = session.isDeIdentified;
-      _searchResultsPubChem.clear();
       _searchResultsPubMed.clear();
       _translatedTranscript = null;
       _showTranslatedTranscript = false;
@@ -181,7 +173,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     _titleController.dispose();
     _chatController.dispose();
     _chatScrollController.dispose();
-    _pubchemSearchController.dispose();
     _pubmedSearchController.dispose();
     _transcriptEditController.dispose();
     _transcriptSearchController.dispose();
@@ -214,24 +205,43 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   // --- Audio Recording Lifecycle with Hardware Noise Suppression ---
 
+  /// Mobile (Android/iOS/macOS) records AAC: the universally reliable
+  /// capture path, converted internally by the on-device engine. Desktop
+  /// (Windows/Linux) has no bundled converter, so it records engine-ready
+  /// 16 kHz mono WAV directly.
+  bool get _recordWavDirectly => Platform.isWindows || Platform.isLinux;
+  String get _recordExtension => _recordWavDirectly ? '.wav' : '.m4a';
+
+  RecordConfig _recordConfig() {
+    if (_recordWavDirectly) {
+      return RecordConfig(
+        encoder: AudioEncoder.wav,
+        sampleRate: 16000,
+        numChannels: 1,
+        device: _selectedInputDevice,
+        noiseSuppress: _enableNoiseSuppression,
+        echoCancel: true,
+        autoGain: true,
+      );
+    }
+    return RecordConfig(
+      encoder: AudioEncoder.aacLc,
+      bitRate: 128000,
+      sampleRate: 44100,
+      device: _selectedInputDevice,
+      noiseSuppress: _enableNoiseSuppression,
+      echoCancel: true,
+      autoGain: true,
+    );
+  }
+
   Future<void> _startRecording() async {
     try {
       if (await _audioRecorder.hasPermission()) {
         final dir = await getApplicationDocumentsDirectory();
         final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final filePath = '${dir.path}/session_$timestamp.wav';
-
-        // 16 kHz mono WAV: the exact format on-device Whisper reads, so no
-        // conversion step is ever needed for new recordings.
-        final config = RecordConfig(
-          encoder: AudioEncoder.wav,
-          sampleRate: 16000,
-          numChannels: 1,
-          device: _selectedInputDevice,
-          noiseSuppress: _enableNoiseSuppression,
-          echoCancel: true,
-          autoGain: true,
-        );
+        final filePath = '${dir.path}/session_$timestamp$_recordExtension';
+        final config = _recordConfig();
 
         await _audioRecorder.start(config, path: filePath);
 
@@ -489,16 +499,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         return;
       }
       final dir = await getTemporaryDirectory();
-      final path = '${dir.path}/mic_test_${DateTime.now().millisecondsSinceEpoch}.wav';
-      await _audioRecorder.start(
-        RecordConfig(
-          encoder: AudioEncoder.wav,
-          sampleRate: 16000,
-          numChannels: 1,
-          device: _selectedInputDevice,
-        ),
-        path: path,
-      );
+      final path = '${dir.path}/mic_test_${DateTime.now().millisecondsSinceEpoch}$_recordExtension';
+      await _audioRecorder.start(_recordConfig(), path: path);
       _showSnackBar('Recording 5-second mic test — speak now.');
       await Future.delayed(const Duration(seconds: 5));
       await _audioRecorder.stop();
@@ -509,20 +511,21 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         return;
       }
       final bytes = await file.length();
-      final info = await WavProbe.probe(file);
+      final sizeLabel = '${(bytes / 1024).toStringAsFixed(1)} KB';
+      String result;
+      if (path.toLowerCase().endsWith('.wav')) {
+        final info = await WavProbe.probe(file);
+        result = info == null
+            ? 'The test file ($sizeLabel) is not a readable WAV. Try again; if it repeats, your device recorder needs attention.'
+            : 'Format: ${info.formatLabel}\nLength: ~${info.durationSec.toStringAsFixed(0)}s ($sizeLabel)\n${info.isWhisperReady ? 'Ready for on-device transcription.' : 'Unexpected format — transcription may fail.'}';
+      } else {
+        result = 'Captured $sizeLabel of M4A audio. Tap Play to confirm it has sound — the engine converts this format automatically.';
+      }
       await showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Mic test result', style: TextStyle(fontSize: 17)),
-          content: Text(
-            info == null
-                ? 'The test file (${(bytes / 1024).toStringAsFixed(1)} KB) is not a readable WAV. '
-                    'Your recorder may not support WAV output on this device.'
-                : 'Format: ${info.formatLabel}\n'
-                    'Length: ~${info.durationSec.toStringAsFixed(0)}s (${(bytes / 1024).toStringAsFixed(1)} KB)\n'
-                    '${info.isWhisperReady ? 'Ready for on-device transcription.' : 'Unexpected format — transcription may fail; re-record or convert to 16 kHz mono.'}',
-            style: const TextStyle(fontSize: 13, height: 1.5),
-          ),
+          content: Text(result, style: const TextStyle(fontSize: 13, height: 1.5)),
           actions: [
             TextButton.icon(
               icon: const Icon(Icons.play_arrow, size: 16),
@@ -875,41 +878,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  // --- On-Demand In-App Scientific Search Handlers ---
-
-  Future<void> _searchPubChemOnDemand(String query) async {
-    final term = query.trim();
-    if (term.isEmpty) return;
-
-    setState(() {
-      _isSearchingPubchem = true;
-    });
-
-    try {
-      final result = await widget.publicApiService.lookupScientificTerm(term);
-      if (result != null) {
-        setState(() {
-          _searchResultsPubChem = [result];
-          if (_currentSession != null &&
-              !_currentSession!.glossaryTerms.any((g) => g.word.toLowerCase() == result.word.toLowerCase())) {
-            _currentSession!.glossaryTerms.insert(0, result);
-            SessionRepository().saveSession(_currentSession!);
-          }
-        });
-      } else {
-        _showSnackBar('No scientific or chemical definition found for "$term".');
-      }
-    } catch (e) {
-      _showSnackBar('PubChem search error: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSearchingPubchem = false;
-        });
-      }
-    }
-  }
-
   Future<void> _searchPubMedOnDemand(String query) async {
     final term = query.trim();
     if (term.isEmpty) return;
@@ -987,11 +955,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         }
       }
 
-      // 1. Transcription (handles automatic chunking if > 24 MB)
-      String? langHint;
-      if (_selectedLanguage == 'en') langHint = 'en';
-      if (_selectedLanguage == 'hi') langHint = 'hi';
-      if (_selectedLanguage == 'hinglish') langHint = 'hinglish';
+      // 1. On-device transcription in auto-detect mode (handles chunking
+      //    automatically for long recordings).
+      const String? langHint = null;
 
       String transcript;
       if (audioPath != null && audioPath.isNotEmpty) {
@@ -1318,7 +1284,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     });
 
     try {
-      final target = _selectedLanguage == 'hi' ? 'English' : 'Hindi';
+      const target = 'Hindi';
       final translated = await widget.intelligenceService.translateScientificText(
         text: _currentSession!.transcript,
         targetLanguage: target,
@@ -1427,81 +1393,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     }
   }
 
-  Widget _buildLanguageSelector(ThemeData theme) {
-    return LabCard(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              color: theme.colorScheme.primary.withValues(alpha: 0.12),
-            ),
-            child: Icon(Icons.language, size: 17, color: theme.colorScheme.primary),
-          ),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Language / भाषा', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
-                Text('On-device speech model', style: TextStyle(color: Colors.grey, fontSize: 10.5)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _setLanguage(String val) {
-    setState(() {
-      _selectedLanguage = val;
-    });
-    _showSnackBar(
-      val == 'hi'
-          ? 'हिन्दी भाषा अनुकूलित (Hindi biomedical optimization active)'
-          : (val == 'hinglish' ? 'Hinglish code-mixed biomedical optimization active' : 'Language set to ${val.toUpperCase()}'),
-    );
-  }
-
-  Widget _languageSegmented(ThemeData theme) {
-    return SegmentedButton<String>(
-      segments: const [
-        ButtonSegment(value: 'auto', label: Text('Auto', style: TextStyle(fontSize: 12))),
-        ButtonSegment(value: 'en', label: Text('EN', style: TextStyle(fontSize: 12))),
-        ButtonSegment(value: 'hi', label: Text('हिन्दी', style: TextStyle(fontSize: 12))),
-        ButtonSegment(value: 'hinglish', label: Text('Hinglish', style: TextStyle(fontSize: 12))),
-      ],
-      selected: {_selectedLanguage},
-      onSelectionChanged: (s) => _setLanguage(s.first),
-      showSelectedIcon: false,
-      style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
-    );
-  }
-
-  /// Reference library: compounds (PubChem + atlas) and papers (PubMed)
-  /// under one segmented tab on every form factor.
-  Widget _buildLibraryTab(ThemeData theme) {
-    return Column(
-      children: [
-        _segmentedHeader(
-          theme,
-          ['Compounds (${_currentSession?.glossaryTerms.length ?? 0})', 'Papers (${_currentSession?.citations.length ?? 0})'],
-          [Icons.medication_liquid_outlined, Icons.library_books_outlined],
-          _scienceSubTabIndex,
-          (v) => setState(() => _scienceSubTabIndex = v),
-        ),
-        Expanded(
-          child: _scienceSubTabIndex == 0
-              ? _buildGlossaryTab(theme)
-              : _buildCitationsTab(theme),
-        ),
-      ],
-    );
-  }
+  /// Reference library: saved papers (PubMed) with in-app reading.
+  Widget _buildLibraryTab(ThemeData theme) => _buildCitationsTab(theme);
 
   Widget _buildScienceMobile(ThemeData theme) => _buildLibraryTab(theme);
 
@@ -2217,7 +2110,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _deskNavEntry(theme, 2, Icons.description_outlined, 'Transcript', s == null || s.transcript.isEmpty ? '' : '${_wordCount(s.transcript)}w', expanded: expanded),
       _deskNavEntry(theme, 3, Icons.fact_check_outlined, 'Actions', _openTaskCount(), expanded: expanded),
       _deskNavEntry(theme, 4, Icons.record_voice_over_outlined, 'Speakers', n(s?.speakerTurns.length ?? 0), expanded: expanded),
-      _deskNavEntry(theme, 5, Icons.library_books_outlined, 'Library', n((s?.glossaryTerms.length ?? 0) + (s?.citations.length ?? 0)), expanded: expanded),
+      _deskNavEntry(theme, 5, Icons.library_books_outlined, 'Library', n(s?.citations.length ?? 0), expanded: expanded),
       _deskNavEntry(theme, 6, Icons.forum_outlined, 'Ask', n(s?.chatHistory.length ?? 0), expanded: expanded),
     ];
   }
@@ -2488,8 +2381,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           _timerHero(theme, large: true),
           const SizedBox(height: 12),
           _buildAudioDeviceSelector(theme),
-          const SizedBox(height: 8),
-          _buildLanguageSelector(theme),
           const SizedBox(height: 12),
           _recordActions(theme),
           const SizedBox(height: 14),
@@ -2857,9 +2748,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _titleController.text = '';
       _transcriptEditController.clear();
       _chatController.clear();
-      _pubchemSearchController.clear();
       _pubmedSearchController.clear();
-      _searchResultsPubChem.clear();
       _searchResultsPubMed.clear();
       _translatedTranscript = null;
       _showTranslatedTranscript = false;
@@ -2872,53 +2761,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _isMeetingCompactMode = false;
     });
     _goRecord();
-  }
-
-  static const List<(String, String)> _sessionTemplates = [
-    ('Lab meeting', 'Weekly Lab Meeting'),
-    ('Tumor board', 'Tumor Board Review'),
-    ('Journal club', 'Journal Club Discussion'),
-    ('Seminar', 'Research Seminar'),
-    ('Thesis defense', 'Thesis Defense'),
-  ];
-
-  String _todaySuffix() {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    final now = DateTime.now();
-    return '${months[now.month - 1]} ${now.day}';
-  }
-
-  void _applyTemplate(String label, String title) {
-    if (_recordingState == RecordingState.recording) {
-      _showSnackBar('Stop the recording before starting a templated session.');
-      return;
-    }
-    setState(() {
-      _titleController.text = '$title · ${_todaySuffix()}';
-    });
-    _showSnackBar('$label template applied.');
-  }
-
-  Widget _templatePicker(ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionLabel('Session template'),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 7,
-          runSpacing: 7,
-          children: _sessionTemplates
-              .map((tpl) => ActionChip(
-                    label: Text(tpl.$1, style: const TextStyle(fontSize: 12)),
-                    avatar: const Icon(Icons.description_outlined, size: 14),
-                    onPressed: () => _applyTemplate(tpl.$1, tpl.$2),
-                    visualDensity: VisualDensity.compact,
-                  ))
-              .toList(),
-        ),
-      ],
-    );
   }
 
   /// Persistent session header: title, workflow stepper, and the single
@@ -3180,10 +3022,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SectionLabel('New session'),
+              const SectionLabel('Session title'),
               const SizedBox(height: 8),
-              _templatePicker(theme),
-              const SizedBox(height: 10),
               TextField(
                 controller: _titleController,
                 decoration: const InputDecoration(
@@ -3203,10 +3043,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               const SectionLabel('Capture'),
               const SizedBox(height: 8),
               _buildAudioDeviceSelector(theme),
-              const SizedBox(height: 8),
-              _buildLanguageSelector(theme),
-              const SizedBox(height: 8),
-              _languageSegmented(theme),
               const SizedBox(height: 4),
               Align(
                 alignment: Alignment.centerRight,
@@ -3698,8 +3534,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   MetricTile(icon: Icons.record_voice_over_outlined, value: '${uniqueSpeakers.isEmpty ? turns.map((e) => e.speakerName).toSet().length : uniqueSpeakers.length}', label: 'Speakers', color: theme.colorScheme.primary),
                   const SizedBox(width: 10),
                   MetricTile(icon: Icons.fact_check_outlined, value: tasks.isEmpty ? '–' : '$done/${tasks.length}', label: 'Tasks done', color: theme.colorScheme.tertiary),
-                  const SizedBox(width: 10),
-                  MetricTile(icon: Icons.medication_liquid_outlined, value: '${_currentSession?.glossaryTerms.length ?? 0}', label: 'Compounds', color: theme.colorScheme.secondary),
                   const SizedBox(width: 10),
                   MetricTile(icon: Icons.library_books_outlined, value: '${_currentSession?.citations.length ?? 0}', label: 'Papers', color: theme.colorScheme.secondary),
                 ],
@@ -4351,78 +4185,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildGlossaryTab(ThemeData theme) {
-    final rawTerms = _currentSession?.glossaryTerms ?? [];
-    final terms = _searchResultsPubChem.isNotEmpty ? _searchResultsPubChem : rawTerms;
-
-    return Column(
-      children: [
-        _searchBar(
-          theme,
-          _pubchemSearchController,
-          'Compound, gene or assay · e.g. Osimertinib, KRAS…',
-          _isSearchingPubchem,
-          () => _searchPubChemOnDemand(_pubchemSearchController.text),
-          () {
-            _pubchemSearchController.clear();
-            setState(() => _searchResultsPubChem.clear());
-          },
-        ),
-        Expanded(
-          child: terms.isEmpty
-              ? const EmptyState(
-                  icon: Icons.medication_liquid_outlined,
-                  title: 'Compound atlas',
-                  body: 'Search NIH PubChem or the offline atlas above — or run AI synthesis to auto-extract drugs, genes and assays.',
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.all(20),
-                  itemCount: terms.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    final term = terms[index];
-                    final isPubChem = term.source == 'PubChem';
-                    return LabCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  term.word.toUpperCase(),
-                                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: isPubChem ? theme.colorScheme.primary : theme.colorScheme.onSurface),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              StatusPill(
-                                icon: isPubChem ? Icons.science_outlined : Icons.menu_book_outlined,
-                                label: isPubChem ? 'NIH PubChem' : (term.partOfSpeech.isNotEmpty ? term.partOfSpeech : 'Atlas'),
-                                color: isPubChem ? theme.colorScheme.primary : theme.colorScheme.secondary,
-                              ),
-                            ],
-                          ),
-                          if (term.phonetic.isNotEmpty) Text(term.phonetic, style: TextStyle(color: theme.colorScheme.outline, fontStyle: FontStyle.italic, fontSize: 12)),
-                          const SizedBox(height: 8),
-                          Text(term.definition, style: theme.textTheme.bodyMedium?.copyWith(height: 1.5)),
-                          if (term.example != null) ...[
-                            const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerLow, borderRadius: BorderRadius.circular(12)),
-                              child: Text(term.example!, style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic, height: 1.45)),
-                            ),
-                          ],
-                        ],
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
     );
   }
 
