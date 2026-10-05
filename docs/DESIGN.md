@@ -86,7 +86,17 @@ accent, setup-first onboarding), adapted for research:
 - Speaker labels are editable everywhere because diarization here is
   dialogue-flow heuristics, not voice biometrics.
 
-## 5. Out of scope / known gaps vs. industry
+## 5. Out of scope / known gaps vs. industry (updated)
+
+- Per-item control is now covered: archive rows have Open/Rename/Share/
+  Export/Delete, tasks move Up/Down, bookmarks and figures detach, and
+  deleting a session also removes its app-managed audio (user imports
+  elsewhere on disk are never touched).
+- Playback has ±10s skip and 1x–2x speed for reviewing long sessions.
+- Raw Whisper output passes through `TranscriptCleaner` (bracketed
+  annotations and looped sentences removed) before anything is saved.
+- Still out of scope: calendar integration, bots/CRM sync, real-time
+  streaming transcript, shareable clips, cross-session topic tracking.
 
 - No calendar integration, auto-join bots, or CRM sync (by design: on-device first).
 - No real-time streaming transcript during recording.

@@ -49,6 +49,29 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   InputDevice? _selectedInputDevice;
 
   bool _isPlaying = false;
+  double _playbackRate = 1.0;
+  static const _playbackRates = [1.0, 1.25, 1.5, 2.0];
+
+  Future<void> _cyclePlaybackRate() async {
+    final i = _playbackRates.indexOf(_playbackRate);
+    final next = _playbackRates[(i + 1) % _playbackRates.length];
+    try {
+      await _audioPlayer.setPlaybackRate(next);
+    } catch (_) {}
+    if (mounted) {
+      setState(() => _playbackRate = next);
+    }
+  }
+
+  Future<void> _skipPlayback(int seconds) async {
+    try {
+      final target = _playbackPosition + Duration(seconds: seconds);
+      final clamped = target < Duration.zero
+          ? Duration.zero
+          : (target > _playbackDuration ? _playbackDuration : target);
+      await _audioPlayer.seek(clamped);
+    } catch (_) {}
+  }
   Duration _playbackDuration = Duration.zero;
   Duration _playbackPosition = Duration.zero;
 
@@ -1969,6 +1992,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     required IconData icon,
     required Color color,
     VoidCallback? onTap,
+    VoidCallback? onDelete,
   }) {
     return InkWell(
       onTap: onTap,
@@ -2002,7 +2026,17 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             Expanded(
               child: Text(text, style: const TextStyle(fontSize: 13, height: 1.4), maxLines: 2, overflow: TextOverflow.ellipsis),
             ),
-            const Icon(Icons.chevron_right, size: 16),
+            if (onDelete != null)
+              InkWell(
+                onTap: onDelete,
+                borderRadius: BorderRadius.circular(8),
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.delete_outline, size: 15),
+                ),
+              )
+            else
+              const Icon(Icons.chevron_right, size: 16),
           ],
         ),
       ),
@@ -2418,6 +2452,14 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         ),
                         const SizedBox(width: 8),
                         Expanded(child: Text(n.note, style: const TextStyle(fontSize: 12.5), overflow: TextOverflow.ellipsis)),
+                        InkWell(
+                          onTap: () => _deleteLiveNote(n),
+                          borderRadius: BorderRadius.circular(8),
+                          child: const Padding(
+                            padding: EdgeInsets.all(4),
+                            child: Icon(Icons.delete_outline, size: 14),
+                          ),
+                        ),
                       ],
                     ),
                   );
@@ -3070,15 +3112,40 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(shape: BoxShape.circle, color: theme.colorScheme.primary.withValues(alpha: 0.14)),
-                  child: IconButton(
-                    icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, size: 18),
-                    onPressed: () async {
-                      if (_isPlaying) {
-                        await _audioPlayer.pause();
-                      } else {
-                        await _audioPlayer.play(DeviceFileSource(_recordedAudioPath!));
-                      }
-                    },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.replay_10, size: 17),
+                        tooltip: 'Back 10 seconds',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _skipPlayback(-10),
+                      ),
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(shape: BoxShape.circle, color: theme.colorScheme.primary.withValues(alpha: 0.14)),
+                        child: IconButton(
+                          icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, size: 19),
+                          onPressed: () async {
+                            if (_isPlaying) {
+                              await _audioPlayer.pause();
+                            } else {
+                              try {
+                                await _audioPlayer.setPlaybackRate(_playbackRate);
+                              } catch (_) {}
+                              await _audioPlayer.play(DeviceFileSource(_recordedAudioPath!));
+                            }
+                          },
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.forward_10, size: 17),
+                        tooltip: 'Forward 10 seconds',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _skipPlayback(10),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -3101,7 +3168,25 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                           },
                         ),
                       ),
-                      Text('${formatMS(_playbackPosition.inSeconds)} / ${formatMS(_playbackDuration.inSeconds)} · local playback', style: TextStyle(fontSize: 10.5, color: theme.colorScheme.outline)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text('${formatMS(_playbackPosition.inSeconds)} / ${formatMS(_playbackDuration.inSeconds)} · local playback', style: TextStyle(fontSize: 10.5, color: theme.colorScheme.outline)),
+                          ),
+                          InkWell(
+                            onTap: _cyclePlaybackRate,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text('${_playbackRate.toStringAsFixed(_playbackRate == _playbackRate.roundToDouble() ? 0 : 2)}x', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: theme.colorScheme.primary)),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -3566,6 +3651,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                             icon: Icons.bookmark_outline,
                             color: theme.colorScheme.tertiary,
                             onTap: () => _seekAudio(note.timestampSeconds),
+                            onDelete: () => _deleteLiveNote(note),
                           )),
                       ...figs.take(4).map((slide) => _momentRow(
                             theme,
@@ -3574,6 +3660,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                             icon: Icons.image_outlined,
                             color: theme.colorScheme.primary,
                             onTap: () => _showFigureLightbox(slide),
+                            onDelete: () => _detachFigure(slide),
                           )),
                     ],
                   ),
@@ -3732,6 +3819,52 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
+  void _moveTask(ActionItem item, int delta) {
+    final list = _currentSession?.actionItems;
+    if (list == null) return;
+    final i = list.indexWhere((e) => e.id == item.id);
+    final j = i + delta;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    setState(() {
+      final tmp = list[i];
+      list[i] = list[j];
+      list[j] = tmp;
+    });
+    SessionRepository().saveSession(_currentSession!);
+  }
+
+  void _deleteTask(ActionItem item) {
+    setState(() {
+      _currentSession?.actionItems.removeWhere((e) => e.id == item.id);
+    });
+    if (_currentSession != null) {
+      SessionRepository().saveSession(_currentSession!);
+    }
+    _showSnackBar('Task deleted.');
+  }
+
+  void _deleteLiveNote(MeetingNote note) {
+    setState(() {
+      _currentSession?.liveNotes.removeWhere((e) => e.id == note.id);
+    });
+    if (_currentSession != null) {
+      SessionRepository().saveSession(_currentSession!);
+    }
+    _showSnackBar('Bookmark deleted.');
+  }
+
+  /// Detaches a figure from the session timeline. The image file itself is
+  /// never deleted — it may be the user's original slide or photo.
+  void _detachFigure(SlideAttachment slide) {
+    setState(() {
+      _currentSession?.slideAttachments.removeWhere((e) => e.id == slide.id);
+    });
+    if (_currentSession != null) {
+      SessionRepository().saveSession(_currentSession!);
+    }
+    _showSnackBar('Figure detached (file kept).');
+  }
+
   // --- Tab 3: Actions — filterable bench task list ---
 
   Widget _buildTasksTab(ThemeData theme) {
@@ -3866,6 +3999,53 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                                           Text(item.deadline!, style: const TextStyle(color: Colors.orange, fontSize: 11.5, fontWeight: FontWeight.w700)),
                                         ],
                                       ),
+                                    PopupMenuButton<String>(
+                                      icon: const Icon(Icons.more_vert, size: 17),
+                                      padding: EdgeInsets.zero,
+                                      style: IconButton.styleFrom(
+                                        minimumSize: const Size(28, 28),
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                      tooltip: 'Task options',
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                      onSelected: (v) {
+                                        if (v == 'up') _moveTask(item, -1);
+                                        if (v == 'down') _moveTask(item, 1);
+                                        if (v == 'delete') _deleteTask(item);
+                                      },
+                                      itemBuilder: (context) => const [
+                                        PopupMenuItem(
+                                          value: 'up',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.arrow_upward, size: 16),
+                                              SizedBox(width: 8),
+                                              Text('Move up'),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'down',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.arrow_downward, size: 16),
+                                              SizedBox(width: 8),
+                                              Text('Move down'),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'delete',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.delete_outline, size: 16),
+                                              SizedBox(width: 8),
+                                              Text('Delete'),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ],
                                 ),
                               ],

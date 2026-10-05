@@ -10,6 +10,7 @@ import '../../../core/config_service.dart';
 import '../../audio/services/audio_chunker_service.dart';
 import '../../clinical/services/phi_scrubber_service.dart';
 import '../../audio/services/wav_probe.dart';
+import 'transcript_cleaner.dart';
 
 /// Minimal engine configuration.
 ///
@@ -373,6 +374,8 @@ class MeetingIntelligenceService {
       withSegments: false,
       onProgress: onProgress,
     );
+    // result null handled by caller; clean text here so every chunk and
+    // single-file path benefits before joining.
     // A null result means the engine itself failed (vs. silence, which
     // yields empty text). Surface it as an engine error, not "no speech".
     if (result == null) {
@@ -383,7 +386,8 @@ class MeetingIntelligenceService {
         'under Engine (lighter on memory).',
       );
     }
-    return result.transcription.text.trim();
+    // Clean bracketed annotations and hallucinated loops before joining.
+    return TranscriptCleaner.clean(result.transcription.text);
   }
 
   /// Process full scientific intelligence pipeline:

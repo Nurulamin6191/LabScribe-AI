@@ -1,7 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../../core/session_repository.dart';
 import '../../../models/meeting_session.dart';
 import '../../../core/widgets/labscribe_ui.dart';
+import '../../export/services/export_service.dart';
 
 /// Historical session browser with real-time scientific search,
 /// metadata badges (redaction flag, SHA-256 reference, citations),
@@ -82,8 +87,79 @@ class _HistoryViewState extends State<HistoryView> {
   }
 
   Future<void> _deleteSession(String id) async {
+    // Remove app-managed files too, so deleted sessions don't leave
+    // orphaned recordings behind. User-picked imports living outside the
+    // app directories are never touched.
+    try {
+      final session = await SessionRepository().loadSession(id);
+      if (session != null) {
+        final docs = await getApplicationDocumentsDirectory();
+        final temp = await getTemporaryDirectory();
+        final managed = [docs.path, temp.path];
+        bool managed(String? p) =>
+            p != null && p.isNotEmpty && managed.any((d) => p.startsWith(d));
+        final targets = <String>[
+          if (managed(session.audioPath)) session.audioPath!,
+          for (final s in session.slideAttachments)
+            if (managed(s.imagePath)) s.imagePath,
+        ];
+        for (final path in targets) {
+          try {
+            final file = File(path);
+            if (await file.exists()) await file.delete();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
     await SessionRepository().deleteSession(id);
     _loadSessions();
+  }
+
+  Future<void> _renameSession(MeetingSession session) async {
+    final controller = TextEditingController(text: session.title);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename session', style: TextStyle(fontSize: 17)),
+        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(labelText: 'Session title')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (result != null && result.isNotEmpty) {
+      session.title = result;
+      await SessionRepository().saveSession(session);
+      _loadSessions();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Session renamed.')));
+      }
+    }
+  }
+
+  Future<void> _shareAudio(MeetingSession session) async {
+    final path = session.audioPath;
+    if (path == null || path.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No audio file for this session.')));
+      }
+      return;
+    }
+    try {
+      final file = File(path);
+      if (!await file.exists()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Audio file no longer on disk.')));
+        }
+        return;
+      }
+      await Share.shareXFiles([XFile(path)], text: 'Recording: ${session.title}');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Share failed: $e')));
+      }
+    }
   }
 
   @override
@@ -228,10 +304,96 @@ class _HistoryViewState extends State<HistoryView> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        session.title,
-                                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                                        overflow: TextOverflow.ellipsis,
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              session.title,
+                                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          PopupMenuButton<String>(
+                                            icon: const Icon(Icons.more_vert, size: 18),
+                                            padding: EdgeInsets.zero,
+                                            style: IconButton.styleFrom(
+                                              minimumSize: const Size(30, 30),
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                            ),
+                                            tooltip: 'Session options',
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                            onSelected: (v) async {
+                                              if (v == 'open' && context.mounted) {
+                                                Navigator.pop(context, session);
+                                              } else if (v == 'rename') {
+                                                await _renameSession(session);
+                                              } else if (v == 'share') {
+                                                await _shareAudio(session);
+                                              } else if (v == 'export') {
+                                                await ExportService().exportSessionAsMarkdown(session);
+                                              } else if (v == 'delete') {
+                                                await _deleteSession(session.id);
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(content: Text('Deleted "${session.title}"')),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                            itemBuilder: (context) => const [
+                                              PopupMenuItem(
+                                                value: 'open',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.open_in_new_outlined, size: 17),
+                                                    SizedBox(width: 8),
+                                                    Text('Open'),
+                                                  ],
+                                                ),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'rename',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.edit_outlined, size: 17),
+                                                    SizedBox(width: 8),
+                                                    Text('Rename'),
+                                                  ],
+                                                ),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'share',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.ios_share_outlined, size: 17),
+                                                    SizedBox(width: 8),
+                                                    Text('Share audio'),
+                                                  ],
+                                                ),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'export',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.description_outlined, size: 17),
+                                                    SizedBox(width: 8),
+                                                    Text('Export notes'),
+                                                  ],
+                                                ),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'delete',
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.delete_outline, size: 17),
+                                                    SizedBox(width: 8),
+                                                    Text('Delete'),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
                                       const SizedBox(height: 3),
                                       Builder(
