@@ -1012,8 +1012,30 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         _processingStage = ProcessingStage.error;
         _statusMessage = 'Error during AI pipeline: $e';
       });
-      _showPipelineErrorDialog(e);
+      _showPipelineErrorDialog(e, details: await _diagnosticDetails());
     }
+  }
+
+  /// Best-effort diagnostics for the failure dialog: model choice and the
+  /// audio file behind the failure. Never throws — diagnostics must not
+  /// create a second error on top of the first.
+  Future<String> _diagnosticDetails() async {
+    final parts = <String>['Model: ${ConfigService().whisperModel}'];
+    try {
+      final path = (_currentSession?.audioPath?.isNotEmpty == true)
+          ? _currentSession!.audioPath
+          : _recordedAudioPath;
+      if (path != null && path.isNotEmpty) {
+        final file = File(path);
+        if (await file.exists()) {
+          final bytes = await file.length();
+          parts.add('Audio: ${path.split(RegExp(r'[/\\\\]')).last} (${(bytes / 1048576).toStringAsFixed(1)} MB)');
+        } else {
+          parts.add('Audio: file missing at analysis time');
+        }
+      }
+    } catch (_) {}
+    return parts.join('\n');
   }
 
   /// Process scientific intelligence directly from pasted text or lecture notes
@@ -1490,10 +1512,16 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   /// Pipeline failure dialog: explains the error and offers a retry.
   /// Nothing is substituted and nothing is lost — audio and notes stay put.
-  Future<void> _showPipelineErrorDialog(dynamic error) async {
+  /// Pipeline failure dialog with copyable diagnostics (model, file size,
+  /// full error) so failures can actually be debugged instead of guessed at.
+  Future<void> _showPipelineErrorDialog(dynamic error, {String? details}) async {
     if (!mounted) return;
     final errText = error.toString().replaceFirst(RegExp(r'^(Exception|StateError):\s*'), '');
     final short = errText.length > 240 ? '${errText.substring(0, 240)}…' : errText;
+    final fullDetails = [
+      'Error: $errText',
+      if (details != null && details.isNotEmpty) details,
+    ].join('\n');
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1505,9 +1533,29 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           ],
         ),
         content: SingleChildScrollView(
-          child: Text(short, style: const TextStyle(fontSize: 13, height: 1.45)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(short, style: const TextStyle(fontSize: 13, height: 1.45)),
+              const SizedBox(height: 8),
+              const Text(
+                'First run needs internet once to download the speech model. '
+                'Copy the details below if the problem persists.',
+                style: TextStyle(fontSize: 12, height: 1.4, color: Colors.grey),
+              ),
+            ],
+          ),
         ),
         actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy_outlined, size: 15),
+            label: const Text('Copy details'),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: fullDetails));
+              _showSnackBar('Error details copied.');
+            },
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Dismiss'),

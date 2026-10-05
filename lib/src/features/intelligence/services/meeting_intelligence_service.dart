@@ -111,49 +111,86 @@ class MeetingIntelligenceService {
           'Transcribe scientific terminology accurately with standard scientific casing.';
     }
 
-    final model = _whisperModel();
     final lang = _whisperLang(languageHint);
-    final controller = WhisperController();
+    final modelName = _config.whisperModel;
 
-    onProgress?.call('Preparing on-device speech model (downloads once on first run)...');
+    onProgress?.call('Preparing $modelName speech model (internet needed once to download it)...');
     try {
-      if (_audioChunker.needsChunking(audioFilePath)) {
-        onProgress?.call('Long recording — transcribing in sequential parts...');
-        final chunkPaths = await _audioChunker.splitAudioFile(audioFilePath);
-        final List<String> parts = [];
-        String rollingPrompt = scientificContextPrompt;
-        try {
-          for (int i = 0; i < chunkPaths.length; i++) {
-            final part = await _transcribeChunk(
-              controller: controller,
-              model: model,
-              filePath: chunkPaths[i],
-              lang: lang,
-              prompt: rollingPrompt,
-              onProgress: (percent) => onProgress?.call('Transcribing part ${i + 1} of ${chunkPaths.length} — $percent%...'),
-            );
-            if (part.isNotEmpty) parts.add(part);
-            rollingPrompt = _audioChunker.buildRollingPrompt(
-              basePrompt: scientificContextPrompt,
-              previousChunkTranscript: part,
-            );
-          }
-        } finally {
-          await _audioChunker.cleanupChunks(chunkPaths, audioFilePath);
-        }
-        return parts.join(' ');
-      }
-      return await _transcribeChunk(
-        controller: controller,
-        model: model,
-        filePath: audioFilePath,
+      return await _runTranscription(
+        model: _whisperModel(),
+        modelLabel: modelName,
         lang: lang,
-        prompt: scientificContextPrompt,
-        onProgress: (percent) => onProgress?.call('Transcribing on-device — $percent%...'),
+        basePrompt: scientificContextPrompt,
+        audioFilePath: audioFilePath,
+        onProgress: onProgress,
       );
     } catch (e) {
+      // The selected model may be too heavy for this device (memory) or its
+      // download may be corrupted — retry once with Tiny before giving up.
+      if (modelName != 'tiny') {
+        onProgress?.call('First attempt failed — retrying with the Tiny model...');
+        try {
+          return await _runTranscription(
+            model: WhisperModel.tiny,
+            modelLabel: 'tiny (fallback)',
+            lang: lang,
+            basePrompt: scientificContextPrompt,
+            audioFilePath: audioFilePath,
+            onProgress: onProgress,
+          );
+        } catch (_) {
+          // Fall through to the original, more informative error below.
+        }
+      }
       throw Exception('On-device transcription failed: $e');
     }
+  }
+
+  /// Core transcription pass (chunked when long). Extracted so a failed
+  /// first attempt can transparently retry with a lighter model.
+  Future<String> _runTranscription({
+    required WhisperModel model,
+    required String modelLabel,
+    required String lang,
+    required String basePrompt,
+    required String audioFilePath,
+    required void Function(String progressUpdate)? onProgress,
+  }) async {
+    final controller = WhisperController();
+    if (_audioChunker.needsChunking(audioFilePath)) {
+      onProgress?.call('Long recording — transcribing in sequential parts ($modelLabel)...');
+      final chunkPaths = await _audioChunker.splitAudioFile(audioFilePath);
+      final List<String> parts = [];
+      String rollingPrompt = basePrompt;
+      try {
+        for (int i = 0; i < chunkPaths.length; i++) {
+          final part = await _transcribeChunk(
+            controller: controller,
+            model: model,
+            filePath: chunkPaths[i],
+            lang: lang,
+            prompt: rollingPrompt,
+            onProgress: (percent) => onProgress?.call('Transcribing part ${i + 1} of ${chunkPaths.length} ($modelLabel) — $percent%...'),
+          );
+          if (part.isNotEmpty) parts.add(part);
+          rollingPrompt = _audioChunker.buildRollingPrompt(
+            basePrompt: basePrompt,
+            previousChunkTranscript: part,
+          );
+        }
+      } finally {
+        await _audioChunker.cleanupChunks(chunkPaths, audioFilePath);
+      }
+      return parts.join(' ');
+    }
+    return await _transcribeChunk(
+      controller: controller,
+      model: model,
+      filePath: audioFilePath,
+      lang: lang,
+      prompt: basePrompt,
+      onProgress: (percent) => onProgress?.call('Transcribing on-device ($modelLabel) — $percent%...'),
+    );
   }
 
   WhisperModel _whisperModel() {
@@ -196,7 +233,9 @@ class MeetingIntelligenceService {
     if (result == null) {
       throw Exception(
         'The on-device speech engine returned no result for $filePath. '
-        'Retry once; if it persists, try a different model size under Engine.',
+        'If this is the first transcription, connect to the internet once so '
+        'the model can download, then retry. Otherwise try the Tiny model '
+        'under Engine (lighter on memory).',
       );
     }
     return result.transcription.text.trim();
