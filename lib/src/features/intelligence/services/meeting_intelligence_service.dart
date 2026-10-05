@@ -490,30 +490,55 @@ $effectiveContext
 """
 ''';
 
-    final response = await _dio.post(
-      '$llmBaseUrl/chat/completions',
-      data: {
-        'model': llmModel,
-        'temperature': 0.15,
-        'response_format': {'type': 'json_object'},
-        'messages': [
-          {'role': 'system', 'content': scientificSystemPrompt},
-          {'role': 'user', 'content': userPrompt},
-        ],
-      },
-      options: Options(
-        headers: {
-          'Content-Type': 'application/json',
+    Future<Map<String, dynamic>> attempt() async {
+      final response = await _dio.post(
+        '$llmBaseUrl/chat/completions',
+        data: {
+          'model': llmModel,
+          'temperature': 0.15,
+          'response_format': {'type': 'json_object'},
+          'messages': [
+            {'role': 'system', 'content': scientificSystemPrompt},
+            {'role': 'user', 'content': userPrompt},
+          ],
         },
-      ),
-    );
+        options: Options(
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
 
-    if (response.statusCode != 200 || response.data == null) {
-      throw Exception('Scientific AI processing failed with status: ${response.statusCode}');
+      if (response.statusCode != 200 || response.data == null) {
+        throw Exception('Scientific AI processing failed with status: ${response.statusCode}');
+      }
+
+      final rawJsonText =
+          response.data['choices'][0]['message']['content']?.toString() ?? '';
+      if (rawJsonText.trim().isEmpty) {
+        throw const FormatException('Empty model response');
+      }
+      return _cleanAndParseJson(rawJsonText);
     }
 
-    final rawJsonText = response.data['choices'][0]['message']['content'];
-    final Map<String, dynamic> parsed = _cleanAndParseJson(rawJsonText);
+    // Small hosted models occasionally truncate long JSON. A fresh sampling
+    // usually completes; only after two truncated responses do we give up
+    // with an explanation instead of a raw parser error.
+    late final Map<String, dynamic> parsed;
+    try {
+      parsed = await attempt();
+    } on FormatException catch (_) {
+      debugPrint('[MeetingIntelligenceService] truncated JSON, retrying once...');
+      try {
+        parsed = await attempt();
+      } on FormatException catch (e) {
+        throw Exception(
+          'The analysis model returned an incomplete response twice '
+          '(${e.message}). Your recording and transcript are safe. '
+          'Wait a moment and retry — or analyze a shorter session.',
+        );
+      }
+    }
 
     final summary = SummaryResult.fromJson(parsed['summary'] ?? {});
     final rawTasks = (parsed['actionItems'] as List?) ?? [];
@@ -547,7 +572,7 @@ $effectiveContext
     }
   }
 
-  /// Clean Markdown code fences and extract valid JSON object from LLM response  /// Clean Markdown code fences and extract valid JSON object from LLM response
+  /// Clean Markdown code fences and extract valid JSON object from LLM response
   Map<String, dynamic> _cleanAndParseJson(String rawText) {
     String cleaned = rawText.trim();
     if (cleaned.startsWith('```')) {
