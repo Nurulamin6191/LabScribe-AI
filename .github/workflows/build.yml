@@ -14,9 +14,9 @@ permissions:
 jobs:
   build-android:
     name: Build Android APKs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -55,7 +55,7 @@ jobs:
           flutter build apk --release --split-per-abi
 
       - name: Upload APK Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: android-apk
           path: |
@@ -64,9 +64,9 @@ jobs:
 
   build-linux:
     name: Build Linux .deb
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Linux Build Dependencies
         run: |
@@ -94,7 +94,7 @@ jobs:
           ./packaging/linux/build_deb.sh
 
       - name: Upload Linux .deb Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: linux-deb
           path: "*.deb"
@@ -103,7 +103,7 @@ jobs:
     name: Build Windows Portable App
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -140,7 +140,7 @@ jobs:
         shell: pwsh
 
       - name: Upload Windows Bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: windows-release
           path: LabScribe-AI-Windows-x64.zip
@@ -149,24 +149,24 @@ jobs:
     name: Publish to GitHub Releases (.apk, .deb, .zip)
     needs: [build-android, build-linux, build-windows]
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download Android Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: android-apk
           path: dist/android
 
       - name: Download Linux Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: linux-deb
           path: dist/linux
 
       - name: Download Windows Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: windows-release
           path: dist/windows
