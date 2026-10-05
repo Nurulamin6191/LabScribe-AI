@@ -7,6 +7,7 @@ import '../../../models/meeting_session.dart';
 import '../../public_apis/services/public_api_service.dart';
 import '../../audio/services/audio_chunker_service.dart';
 import '../../clinical/services/phi_scrubber_service.dart';
+import '../../audio/services/wav_probe.dart';
 
 /// Minimal engine configuration.
 ///
@@ -81,6 +82,16 @@ class MeetingIntelligenceService {
     }
 
     final ext = audioFilePath.split('.').last.toLowerCase();
+    if (ext == 'wav') {
+      final info = await WavProbe.probe(File(audioFilePath));
+      if (info == null) {
+        throw Exception(
+          'This WAV file could not be parsed (missing or corrupt header). '
+          'Re-record the session; if imports keep failing, convert the file '
+          'to 16 kHz mono WAV first.',
+        );
+      }
+    }
     if (ext != 'wav' && (Platform.isWindows || Platform.isLinux)) {
       final hasFfmpeg = await _audioChunker.ffmpegAvailable();
       if (!hasFfmpeg) {

@@ -15,6 +15,7 @@ import '../../../core/crypto_utils.dart';
 import '../../../core/config_service.dart';
 import '../../../core/widgets/labscribe_ui.dart';
 import '../../../core/workflow/session_workflow.dart';
+import '../../audio/services/wav_probe.dart';
 import '../../settings/presentation/settings_view.dart';
 import '../../export/services/export_service.dart';
 import '../../history/presentation/history_view.dart';
@@ -1029,7 +1030,14 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         final file = File(path);
         if (await file.exists()) {
           final bytes = await file.length();
-          parts.add('Audio: ${path.split(RegExp(r'[/\\\\]')).last} (${(bytes / 1048576).toStringAsFixed(1)} MB)');
+          var audioLine = 'Audio: ${path.split(RegExp(r'[/\\\\]')).last} (${(bytes / 1048576).toStringAsFixed(1)} MB)';
+          if (path.toLowerCase().endsWith('.wav')) {
+            final info = await WavProbe.probe(file);
+            audioLine += info == null
+                ? ' [unparseable WAV header]'
+                : ' [${info.formatLabel}, ~${info.durationSec.toStringAsFixed(0)}s]';
+          }
+          parts.add(audioLine);
         } else {
           parts.add('Audio: file missing at analysis time');
         }
@@ -1537,7 +1545,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(short, style: const TextStyle(fontSize: 13, height: 1.45)),
+              SelectableText(short, style: const TextStyle(fontSize: 13, height: 1.45)),
               const SizedBox(height: 8),
               const Text(
                 'First run needs internet once to download the speech model. '
