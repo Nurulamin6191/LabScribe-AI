@@ -31,17 +31,20 @@ void main() async {
   runApp(LabScribeApp(
     intelligenceService: intelligenceService,
     publicApiService: publicApiService,
+    setupDone: configService.setupDone,
   ));
 }
 
 class LabScribeApp extends StatelessWidget {
   final MeetingIntelligenceService intelligenceService;
   final PublicApiService publicApiService;
+  final bool setupDone;
 
   const LabScribeApp({
     super.key,
     required this.intelligenceService,
     required this.publicApiService,
+    required this.setupDone,
   });
 
   @override
@@ -52,7 +55,7 @@ class LabScribeApp extends StatelessWidget {
       themeMode: ThemeMode.system,
       theme: LabScribeTheme.light(),
       darkTheme: LabScribeTheme.dark(),
-      home: configService.setupDone
+      home: setupDone
           ? RecorderView(
               intelligenceService: intelligenceService,
               publicApiService: publicApiService,
