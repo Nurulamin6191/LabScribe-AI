@@ -270,7 +270,7 @@ class _HistoryViewState extends State<HistoryView> {
                                           padding: const EdgeInsets.symmetric(horizontal: 6),
                                           decoration: const BoxDecoration(
                                             shape: BoxShape.circle,
-                                            color: Color(0xFF00A884),
+                                            color: Color(0xFFE53935),
                                           ),
                                           alignment: Alignment.center,
                                           child: Text(

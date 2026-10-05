@@ -109,6 +109,15 @@ flowchart TD
 
 ---
 
+## First launch: one-time setup (no accounts, no keys)
+
+Opening the app shows a setup screen, BlackHole-style: pick a speech
+model (Tiny 75 MB / **Base 150 MB, recommended** / Small 460 MB),
+download it once with visible progress, then continue. Upgrading users
+see it once too. Skipping is allowed; transcription waits until a model
+is downloaded (Engine screen offers it again, plus a 5-second mic
+self-test under the microphone selector).
+
 ## Getting real results with zero setup
 
 No API keys, no terminal, no URLs, no accounts. Install and use:

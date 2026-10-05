@@ -51,7 +51,9 @@ below 900px a 5-destination bottom bar groups related tabs
 
 ## 3. Design tokens
 
-Borrowed from messaging/learning leaders, adapted for research:
+Borrowed from messaging/learning leaders, then re-skinned
+BlackHole-style (pure-black dark theme, white light theme, one signal-red
+accent, setup-first onboarding), adapted for research:
 
 - **WhatsApp warmth**: paper background (`#ECE5DB`), white cards,
   deep-green header (`#008069`), bright-green FAB and primary actions

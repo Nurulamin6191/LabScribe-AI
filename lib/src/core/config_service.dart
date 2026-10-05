@@ -45,6 +45,15 @@ class ConfigService {
     if (!['tiny', 'base', 'small'].contains(whisperModel)) {
       whisperModel = 'base';
     }
+    setupDone = _prefs.getBool('setupDone') ?? false;
+  }
+
+  /// First-launch onboarding (model download) completed.
+  bool setupDone = false;
+
+  Future<void> setSetupDone() async {
+    setupDone = true;
+    await _prefs.setBool('setupDone', true);
   }
 
   Future<void> setWhisperModel(String model) async {

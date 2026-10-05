@@ -557,7 +557,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         builder: (context, setDialogState) => AlertDialog(
           title: const Row(
             children: [
-              Icon(Icons.add_photo_alternate, color: Colors.teal),
+              Icon(Icons.add_photo_alternate, color: const Color(0xFFE53935)),
               SizedBox(width: 8),
               Text('Attach Slide / Gel Figure'),
             ],
@@ -658,7 +658,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            const Icon(Icons.menu_book, color: Colors.teal),
+            const Icon(Icons.menu_book, color: const Color(0xFFE53935)),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -694,7 +694,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 const Divider(),
                 const Text(
                   'STRUCTURED ABSTRACT',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.teal),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: const Color(0xFFE53935)),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -776,7 +776,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.image, size: 64, color: Colors.teal),
+                                  const Icon(Icons.image, size: 64, color: const Color(0xFFE53935)),
                                   const SizedBox(height: 12),
                                   Text(
                                     slide.caption,
@@ -826,7 +826,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.article, color: Colors.teal),
+                      const Icon(Icons.article, color: const Color(0xFFE53935)),
                       const SizedBox(width: 8),
                       Text(
                         'Lab Notebook: ${_currentSession!.title}',
@@ -1217,7 +1217,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           children: [
             Row(
               children: [
-                const Icon(Icons.save_alt, color: Colors.teal),
+                const Icon(Icons.save_alt, color: const Color(0xFFE53935)),
                 const SizedBox(width: 10),
                 Text(
                   'Save / Export Transcript',
@@ -1249,7 +1249,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
               },
             ),
             ListTile(
-              leading: const Icon(Icons.copy, color: Colors.teal),
+              leading: const Icon(Icons.copy, color: const Color(0xFFE53935)),
               title: const Text('Copy to Clipboard'),
               subtitle: const Text('Quick paste into Slack, WhatsApp, or email'),
               onTap: () {
@@ -1345,7 +1345,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       builder: (ctx) => AlertDialog(
         title: const Row(
           children: [
-            Icon(Icons.paste, color: Colors.teal),
+            Icon(Icons.paste, color: const Color(0xFFE53935)),
             SizedBox(width: 10),
             Text('Paste Transcript / Notes', style: TextStyle(fontSize: 18)),
           ],
@@ -1953,7 +1953,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   value: 'markdown',
                   child: Row(
                     children: [
-                      Icon(Icons.description_outlined, size: 18, color: Color(0xFF0A7C6B)),
+                      Icon(Icons.description_outlined, size: 18, color: Color(0xFFE53935)),
                       SizedBox(width: 8),
                       Text('Lab Notebook (.md)'),
                     ],
@@ -4051,7 +4051,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   Color _getSpeakerColor(String speakerId) {
     final colors = [
-      const Color(0xFF0A7C6B),
+      const Color(0xFFE53935),
       const Color(0xFF3B5BFF),
       const Color(0xFFC2410C),
       const Color(0xFF7C3AED),
@@ -4089,7 +4089,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       builder: (ctx) => AlertDialog(
         title: const Row(
           children: [
-            Icon(Icons.record_voice_over_outlined, color: Color(0xFF0A7C6B)),
+            Icon(Icons.record_voice_over_outlined, color: Color(0xFFE53935)),
             SizedBox(width: 8),
             Text('Identify Speaker'),
           ],

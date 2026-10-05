@@ -5,6 +5,7 @@ import 'src/core/theme/app_theme.dart';
 import 'src/features/intelligence/services/meeting_intelligence_service.dart';
 import 'src/features/public_apis/services/public_api_service.dart';
 import 'src/features/recorder/presentation/recorder_view.dart';
+import 'src/features/setup/presentation/setup_view.dart';
 import 'src/core/config_service.dart';
 
 void main() async {
@@ -51,10 +52,15 @@ class LabScribeApp extends StatelessWidget {
       themeMode: ThemeMode.system,
       theme: LabScribeTheme.light(),
       darkTheme: LabScribeTheme.dark(),
-      home: RecorderView(
-        intelligenceService: intelligenceService,
-        publicApiService: publicApiService,
-      ),
+      home: configService.setupDone
+          ? RecorderView(
+              intelligenceService: intelligenceService,
+              publicApiService: publicApiService,
+            )
+          : SetupView(
+              intelligenceService: intelligenceService,
+              publicApiService: publicApiService,
+            ),
     );
   }
 }
