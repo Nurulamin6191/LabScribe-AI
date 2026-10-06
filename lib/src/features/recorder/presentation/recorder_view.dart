@@ -66,6 +66,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   bool _liveModeActive = false;
   String _livePartial = '';
   bool _startingRecording = false;
+  bool _stoppingRecording = false;
 
   bool _isPlaying = false;
   double _playbackRate = 1.0;
@@ -455,6 +456,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   Future<void> _pauseRecording() async {
+    if (_stoppingRecording) return;
     try {
       if (_liveModeActive) {
         await _liveCaptions.pause();
@@ -474,6 +476,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   Future<void> _resumeRecording() async {
+    if (_stoppingRecording) return;
     try {
       if (_liveModeActive) {
         await _liveCaptions.resume();
@@ -493,17 +496,27 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   Future<void> _stopRecording() async {
+    // The live finalize (engine drain + WAV header patch) takes seconds
+    // while the Stop button stays visible — a second tap or "Stop & Exit"
+    // racing it must not re-enter and re-run the teardown.
+    if (_stoppingRecording) return;
+    _stoppingRecording = true;
+    var liveFinalizeAttempted = false;
     try {
       _timer?.cancel();
       String? path;
       var liveText = '';
       if (_liveModeActive) {
-        // Finalizes inference and patches the WAV header in one step.
-        final result = await _liveCaptions.stop();
-        path = result.path;
-        liveText = result.text;
         _liveModeActive = false;
         _livePartial = '';
+        liveFinalizeAttempted = true;
+        if (mounted) {
+          setState(() => _statusMessage = 'Finalizing live transcript...');
+        }
+        // Idempotent service: concurrent callers await the same finalize.
+        final result = await _liveCaptions.stop();
+        path = result?.path ?? _recordedAudioPath;
+        liveText = result?.text ?? '';
       } else {
         path = _useDesktopRecorder
             ? await _desktopRecorder.stop()
@@ -524,33 +537,37 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         }
       }
 
-      setState(() {
-        _recordingState = RecordingState.stopped;
-        _recordedAudioPath = path ?? _recordedAudioPath;
-        _statusMessage = silentCapture
-            ? 'Recording captured no microphone signal — pick another input device in Capture.'
-            : liveText.isNotEmpty
-                ? 'Live transcript ready — run Analysis for summary, tasks, and speakers.'
-                : 'Recording saved on-device with a SHA-256 reference. Ready for analysis.';
-
-        if (_currentSession != null) {
-          _currentSession!.audioPath = _recordedAudioPath;
-          _currentSession!.durationSeconds = _recordDurationSeconds;
-          _currentSession!.title = _titleController.text.trim().isEmpty ? 'Scientific Meeting' : _titleController.text.trim();
-          _currentSession!.audioSha256 = audioSha256;
-          // Draft transcript available before any analysis runs.
-          if (liveText.isNotEmpty && _currentSession!.transcript.trim().isEmpty) {
-            _currentSession!.transcript = liveText;
-            _transcriptEditController.text = liveText;
-          }
+      // Session bookkeeping runs unguarded: if the widget was popped while
+      // finalizing, the meeting must still be persisted with its audio.
+      final session = _currentSession;
+      if (session != null) {
+        session.audioPath = path ?? _recordedAudioPath ?? session.audioPath;
+        session.durationSeconds = _recordDurationSeconds;
+        session.title = _titleController.text.trim().isEmpty ? 'Scientific Meeting' : _titleController.text.trim();
+        session.audioSha256 = audioSha256;
+        // Draft transcript available before any analysis runs.
+        if (liveText.isNotEmpty && session.transcript.trim().isEmpty) {
+          session.transcript = liveText;
+          if (mounted) _transcriptEditController.text = liveText;
         }
-      });
-
-      if (_currentSession != null) {
-        await SessionRepository().saveSession(_currentSession!);
       }
 
-      final session = _currentSession;
+      if (mounted) {
+        setState(() {
+          _recordingState = RecordingState.stopped;
+          _recordedAudioPath = path ?? _recordedAudioPath;
+          _statusMessage = silentCapture
+              ? 'Recording captured no microphone signal — pick another input device in Capture.'
+              : liveText.isNotEmpty
+                  ? 'Live transcript ready — run Analysis for summary, tasks, and speakers.'
+                  : 'Recording saved on-device with a SHA-256 reference. Ready for analysis.';
+        });
+      }
+
+      if (session != null) {
+        await SessionRepository().saveSession(session);
+      }
+
       if (silentCapture && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           duration: Duration(seconds: 6),
@@ -572,7 +589,25 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         }
       }
     } catch (e) {
+      if (liveFinalizeAttempted) {
+        // The service tears itself down even when finalize fails — the UI
+        // must never keep claiming "recording" with nothing behind it.
+        _liveModeActive = false;
+        _recordingState = RecordingState.stopped;
+        if (mounted) {
+          setState(() =>
+              _statusMessage = 'Recording stopped — live finalize failed: $e');
+        }
+        final session = _currentSession;
+        if (session != null) {
+          try {
+            await SessionRepository().saveSession(session);
+          } catch (_) {}
+        }
+      }
       _showSnackBar('Error stopping recorder: $e');
+    } finally {
+      _stoppingRecording = false;
     }
   }
 

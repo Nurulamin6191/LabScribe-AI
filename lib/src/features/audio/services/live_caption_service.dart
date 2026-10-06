@@ -46,6 +46,7 @@ class LiveCaptionService {
   Future<void> _writeQueue = Future<void>.value();
   String? _wavPath;
   bool _active = false;
+  Future<LiveCaptionResult>? _stopFuture;
 
   /// Rolling (cleaned) subtitle text from the running session.
   String latestPartial = '';
@@ -77,6 +78,7 @@ class LiveCaptionService {
     }
 
     _wavPath = wavPath;
+    _stopFuture = null;
     latestPartial = '';
     _pcmDone = Completer<void>();
     _feed = StreamController<Uint8List>();
@@ -180,9 +182,22 @@ class LiveCaptionService {
 
   /// Stops capture, drains the tail into the engine, finalizes both the
   /// session text and the WAV header, and returns the result.
-  Future<LiveCaptionResult> stop() async {
-    if (!_active) throw StateError('Live captions are not running.');
+  ///
+  /// Idempotent: the Stop button can be tapped again (or dispose can race
+  /// it) while this still runs — every caller awaits the same finalize and
+  /// receives the same result instead of a [StateError]. Returns null when
+  /// there was never an active session to stop.
+  Future<LiveCaptionResult?> stop() {
+    final inFlight = _stopFuture;
+    if (inFlight != null) return inFlight;
+    if (!_active) return Future.value(null);
     _active = false;
+    final future = _doStop();
+    _stopFuture = future;
+    return future;
+  }
+
+  Future<LiveCaptionResult> _doStop() async {
     try {
       // 1. Stop the source; its stream closing drains the tail audio.
       if (_desktop != null) {
@@ -252,6 +267,15 @@ class LiveCaptionService {
 
   /// Best-effort cleanup when the UI goes away mid-recording.
   Future<void> dispose() async {
+    final stopping = _stopFuture;
+    if (stopping != null) {
+      // A finalize is (or was) running: let it patch the WAV header before
+      // any teardown, otherwise the file is left with bogus RIFF sizes.
+      try {
+        await stopping;
+      } catch (_) {}
+      return;
+    }
     if (_active) {
       try {
         await stop();
