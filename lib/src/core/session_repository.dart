@@ -20,7 +20,7 @@ class SessionRepository {
     String path = join(await getDatabasesPath(), 'labscribe_sessions.db');
     final db = await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: (db, version) async {
         await _createTable(db);
       },
@@ -48,6 +48,12 @@ class SessionRepository {
           try {
             await db.execute('ALTER TABLE sessions ADD COLUMN speakerTurnsJson TEXT');
             await db.execute('ALTER TABLE sessions ADD COLUMN isVirtualCall INTEGER DEFAULT 0');
+          } catch (_) {}
+        }
+        if (oldVersion < 6) {
+          try {
+            await db.execute('ALTER TABLE sessions ADD COLUMN kind TEXT');
+            await db.execute('ALTER TABLE sessions ADD COLUMN chatHistoryJson TEXT');
           } catch (_) {}
         }
       },
@@ -82,7 +88,9 @@ class SessionRepository {
         audioSha256 TEXT,
         transcriptSha256 TEXT,
         speakerTurnsJson TEXT,
-        isVirtualCall INTEGER DEFAULT 0
+        isVirtualCall INTEGER DEFAULT 0,
+        kind TEXT,
+        chatHistoryJson TEXT
       )
     ''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_sessions_createdAt ON sessions(createdAt DESC);');
@@ -98,6 +106,7 @@ class SessionRepository {
     String glossaryTermsJson = jsonEncode(session.glossaryTerms.map((e) => e.toJson()).toList());
     String liveNotesJson = jsonEncode(session.liveNotes.map((e) => e.toJson()).toList());
     String speakerTurnsJson = jsonEncode(session.speakerTurns.map((e) => e.toJson()).toList());
+    String chatHistoryJson = jsonEncode(session.chatHistory.map((e) => e.toJson()).toList());
 
     await db.insert(
       'sessions',
@@ -119,6 +128,8 @@ class SessionRepository {
         'transcriptSha256': session.transcriptSha256,
         'speakerTurnsJson': speakerTurnsJson,
         'isVirtualCall': session.isVirtualCall ? 1 : 0,
+        'kind': session.kind.name,
+        'chatHistoryJson': chatHistoryJson,
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
@@ -188,6 +199,15 @@ class SessionRepository {
       liveNotes = jsonList.map((e) => MeetingNote.fromJson(e)).toList();
     }
 
+    // Chat survived v6 upgrades; older rows simply have no column value.
+    List<ChatMessage> chatHistory = [];
+    if (map['chatHistoryJson'] != null && (map['chatHistoryJson'] as String).isNotEmpty) {
+      try {
+        final List<dynamic> jsonList = jsonDecode(map['chatHistoryJson']);
+        chatHistory = jsonList.map((e) => ChatMessage.fromJson(e)).toList();
+      } catch (_) {}
+    }
+
     return MeetingSession(
       id: map['id'],
       title: map['title'],
@@ -202,8 +222,10 @@ class SessionRepository {
       liveNotes: liveNotes,
       glossaryTerms: glossaryTerms,
       speakerTurns: speakerTurns,
+      chatHistory: chatHistory,
       isDeIdentified: (map['isDeIdentified'] ?? 0) == 1,
       isVirtualCall: (map['isVirtualCall'] ?? 0) == 1,
+      kind: SessionKind.fromName(map['kind'] as String?),
       audioSha256: map['audioSha256'],
       transcriptSha256: map['transcriptSha256'],
     );

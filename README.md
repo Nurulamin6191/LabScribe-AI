@@ -24,7 +24,10 @@ No Flutter, Git, or command-line setup required for the packaged builds:
 
 ## Key Features
 
-- **Speaker-labeled turns**: groups transcript segments by detected speaker flow, with manual rename that updates turns and task attributions, plus tap-to-seek playback where audio is available.
+- **Live captions**: while recording, an on-device streaming pass renders rolling AI subtitles (filler-cleaned) in the recording deck, and the stop action immediately stores a draft transcript alongside the WAV. Works on Android, Windows, and Linux (FFmpeg PCM stream); degrades to plain recording if the model or microphone is unavailable.
+- **Session types**: tag a session as Lab Meeting, Journal Club, Seminar, or Lecture — the synthesis prompt retargets accordingly (paper critique vs. takeaways vs. key concepts vs. decisions/owners).
+- **Speaker-labeled turns**: groups transcript segments by detected speaker flow, with manual rename that updates turns and task attributions, plus tap-to-seek playback where audio is available. When the engine returns timestamps, turns are grounded in real segment indexes instead of estimates.
+- **Clean transcripts**: on-device post-processing removes non-speech markers (`[BLANK_AUDIO]`, `[music]`), filler words (`um`, `hmm`, `mm-hmm`), repeated sentence loops, and ragged punctuation before anything is saved or summarized.
 - **Call audio import**: import existing recordings (`.m4a`, `.mp3`, `.wav`, `.opus`) from conferencing tools for transcription and analysis. Loopback/monitor capture depends on OS audio setup.
 - **Long-audio handling**: files above the transcription payload limit are processed in sequential chunks with rolling context.
 - **Redaction helper**: optional pattern-based masking for common identifier formats (e.g. MRN-like labels, DOB-like phrases, phone/email patterns). Review output before sharing. This is not a certification of de-identification.
@@ -42,11 +45,14 @@ No Flutter, Git, or command-line setup required for the packaged builds:
 | Capability | Implementation | Notes |
 | :--- | :--- | :--- |
 | **Speaker turns** | Dialogue-flow segmentation + editable labels | Verify labels before export |
+| **Live captions** | Streaming Whisper + teed WAV writer | Toggle in *Capture lab*; fallback to plain recording |
+| **Session types** | Meeting / Journal Club / Seminar / Lecture chips | Retargets the synthesis prompt |
 | **Call import** | File picker for `.m4a`/`.opus`/etc. | Depends on files exported by meeting apps |
 | **Compact dock** | Narrow card layout toggled from the AppBar | Useful alongside slides or meeting windows |
 | **Quick tags** | `Action Item`, `Hypothesis`, `Result`, `Question` bookmarks | Timestamped to the recording timer |
 | **Exit confirm** | `PopScope` guard during active recording | Helps avoid accidental navigation |
-| **Microphone selection** | `AudioRecorder.listInputDevices()` | Device list depends on OS permissions |
+| **Microphone selection** | Pulse/PipeWire sources, direct ALSA fallback on Linux | *Test mic* reports format, length, and signal level |
+| **Silence detection** | Peak-level check after every stop | Warns when the chosen input captured nothing |
 | **Live notes stream** | Chronological list in the recording deck | Stored with the session |
 | **Responsive layout** | Desktop: rail + deck + content; Mobile: bottom bar | See `recorder_view.dart` |
 
@@ -124,6 +130,10 @@ No API keys, no terminal, no URLs, no accounts. Install and use:
 
 1. **Record** — press the red button. Mobile saves compact audio
    (converted automatically); desktop saves engine-ready 16 kHz WAV.
+   Linux records through FFmpeg (PulseAudio/PipeWire, direct ALSA
+   fallback) — no external `fmedia` needed. With live captions enabled,
+   subtitles roll while you record and a draft transcript is stored the
+   moment you stop.
 2. **Transcribe** — press **Process AI insights**. The Whisper speech
    model downloads once on first use (Tiny 75 MB / Base 150 MB /
    Small 460 MB, chosen under Engine), then works fully offline.

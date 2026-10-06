@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -16,6 +17,8 @@ import '../../../core/config_service.dart';
 import '../../../core/widgets/labscribe_ui.dart';
 import '../../../core/workflow/session_workflow.dart';
 import '../../audio/services/wav_probe.dart';
+import '../../audio/services/desktop_recorder.dart';
+import '../../audio/services/live_caption_service.dart';
 import '../../settings/presentation/settings_view.dart';
 import '../../export/services/export_service.dart';
 import '../../history/presentation/history_view.dart';
@@ -48,6 +51,22 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   String? _selectedDeviceId;
   InputDevice? _selectedInputDevice;
 
+  // Linux capture backend: FFmpeg when available (always is, via the .deb
+  // dependency), falling back to the `record` package only when its external
+  // fmedia binary exists. When neither is present, recording is refused with
+  // an actionable dialog instead of a cryptic ProcessException.
+  final DesktopRecorder _desktopRecorder = DesktopRecorder();
+  bool _useDesktopRecorder = false;
+  bool _recorderUnavailable = false;
+
+  // Live captions (HyperOS-style subtitles): capture tee'd into a WAV and
+  // the Whisper streaming session while recording runs.
+  final LiveCaptionService _liveCaptions = LiveCaptionService();
+  bool _liveCaptionsEnabled = true;
+  bool _liveModeActive = false;
+  String _livePartial = '';
+  bool _startingRecording = false;
+
   bool _isPlaying = false;
   double _playbackRate = 1.0;
   static const _playbackRates = [1.0, 1.25, 1.5, 2.0];
@@ -77,6 +96,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   RecordingState _recordingState = RecordingState.idle;
   ProcessingStage _processingStage = ProcessingStage.idle;
+  // True while the AI pipeline runs; blocks double-starts across screens.
+  bool _isPipelineRunning = false;
   
   // Timer & Metrics
   Timer? _timer;
@@ -95,6 +116,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   final ScrollController _chatScrollController = ScrollController();
   
   MeetingSession? _currentSession;
+  // Session kind chosen before a session exists; applied when recording or
+  // pasted-text analysis creates one.
+  SessionKind _pendingSessionKind = SessionKind.meeting;
   // Bottom-bar / sidebar destination: 0 Meet, 1 Sessions, 2 Tasks, 3 Engine.
   int _navIndex = 0;
   // When true, the Sessions destination shows the open session's detail
@@ -123,6 +147,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   void loadSession(MeetingSession session) {
     setState(() {
       _currentSession = session;
+      _pendingSessionKind = session.kind;
       _titleController.text = session.title;
       _recordedAudioPath = session.audioPath;
       _recordDurationSeconds = session.durationSeconds;
@@ -176,8 +201,24 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
     _titleController.addListener(_onTitleChanged);
 
-    // Enumerate connected microphones (Jabra, USB, AirPods, built-in)
-    _loadAudioDevices();
+    // Pick the capture backend first (async on Linux), then enumerate
+    // connected microphones (Jabra, USB, AirPods, built-in).
+    _initRecordingBackend();
+  }
+
+  /// Chooses how audio is captured on this platform. Linux needs a real
+  /// decision — the `record` package shells out to an external `fmedia`
+  /// binary that no distro ships, so FFmpeg (a hard dependency of this app)
+  /// takes over when present.
+  Future<void> _initRecordingBackend() async {
+    if (Platform.isLinux) {
+      final ffmpeg = await DesktopRecorder.isAvailable();
+      _useDesktopRecorder = ffmpeg;
+      _recorderUnavailable =
+          !ffmpeg && !(await DesktopRecorder.isFmediaAvailable());
+    }
+    if (mounted) setState(() {});
+    await _loadAudioDevices();
   }
 
   @override
@@ -185,6 +226,8 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     _timer?.cancel();
     _audioRecorder.dispose();
     _audioPlayer.dispose();
+    unawaited(_desktopRecorder.dispose());
+    unawaited(_liveCaptions.dispose());
     _titleController.dispose();
     _chatController.dispose();
     _chatScrollController.dispose();
@@ -198,6 +241,20 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   Future<void> _loadAudioDevices() async {
     try {
+      if (_useDesktopRecorder) {
+        // FFmpeg/Pulse enumerates without any permission prompt.
+        final devices = await DesktopRecorder.listInputDevices();
+        if (mounted) {
+          setState(() {
+            _audioInputDevices = devices;
+            if (devices.isNotEmpty && _selectedDeviceId == null) {
+              _selectedDeviceId = devices.first.id;
+              _selectedInputDevice = devices.first;
+            }
+          });
+        }
+        return;
+      }
       if (await _audioRecorder.hasPermission()) {
         final devices = await _audioRecorder.listInputDevices();
         if (mounted) {
@@ -248,43 +305,164 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   Future<void> _startRecording() async {
+    // Guard: preparing live captions (model warm-up) takes a moment, and a
+    // second tap must not open a duplicate capture session.
+    if (_startingRecording ||
+        _recordingState == RecordingState.recording ||
+        _recordingState == RecordingState.paused) {
+      return;
+    }
+    _startingRecording = true;
     try {
-      if (await _audioRecorder.hasPermission()) {
-        final dir = await getApplicationDocumentsDirectory();
-        final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final filePath = '${dir.path}/session_$timestamp$_recordExtension';
-        final config = _recordConfig();
-
-        await _audioRecorder.start(config, path: filePath);
-
-        setState(() {
-          _recordingState = RecordingState.recording;
-          _recordedAudioPath = filePath;
-          _recordDurationSeconds = 0;
-          _statusMessage = 'Recording...';
-          
-          _currentSession = MeetingSession(
-            id: timestamp.toString(),
-            title: _titleController.text.trim().isEmpty ? 'Scientific Meeting' : _titleController.text.trim(),
-            createdAt: DateTime.now(),
-            audioPath: filePath,
-            durationSeconds: 0,
-            isDeIdentified: _enableClinicalDeIdentification,
-          );
-        });
-
-        _startTimer();
-      } else {
-        _showSnackBar('Microphone permission denied.');
+      if (_recorderUnavailable) {
+        await _showRecorderMissingDialog();
+        return;
       }
+      final dir = await getApplicationDocumentsDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      // Live captions always write engine-ready WAV; the plain fallback
+      // path must use the platform's own extension so the encoder and the
+      // file suffix stay consistent (AAC into a .wav name would never parse).
+      var capturePath =
+          '${dir.path}/session_$timestamp${_liveCaptionsEnabled ? '.wav' : _recordExtension}';
+
+      var liveStarted = false;
+      if (_liveCaptionsEnabled) {
+        liveStarted = await _startLiveCaptions(capturePath);
+        if (!liveStarted && !mounted) return;
+      }
+      if (!liveStarted) {
+        // Plain file capture — toggle off, or live captions fell back.
+        capturePath = '${dir.path}/session_$timestamp$_recordExtension';
+        if (_useDesktopRecorder) {
+          await _desktopRecorder.start(
+            path: capturePath,
+            deviceId: _selectedDeviceId,
+            denoise: _enableNoiseSuppression,
+          );
+        } else {
+          if (!await _audioRecorder.hasPermission()) {
+            _showSnackBar('Microphone permission denied.');
+            return;
+          }
+          await _audioRecorder.start(_recordConfig(), path: capturePath);
+        }
+      }
+
+      setState(() {
+        _recordingState = RecordingState.recording;
+        _recordedAudioPath = capturePath;
+        _recordDurationSeconds = 0;
+        _statusMessage = _liveModeActive ? 'Recording — live captions on.' : 'Recording...';
+
+        _currentSession = MeetingSession(
+          id: timestamp.toString(),
+          title: _titleController.text.trim().isEmpty ? 'Scientific Meeting' : _titleController.text.trim(),
+          createdAt: DateTime.now(),
+          audioPath: capturePath,
+          durationSeconds: 0,
+          isDeIdentified: _enableClinicalDeIdentification,
+          kind: _pendingSessionKind,
+        );
+      });
+
+      _startTimer();
     } catch (e) {
       _showSnackBar('Error starting recorder: $e');
+    } finally {
+      _startingRecording = false;
     }
+  }
+
+  /// Prepares the model and starts the live-subtitle capture for [filePath].
+  /// Returns true when live mode is running. On failure it explains why and
+  /// returns false so recording falls back to the plain file path — the
+  /// meeting is never lost because a subtitle feature broke.
+  Future<bool> _startLiveCaptions(String filePath) async {
+    try {
+      await widget.intelligenceService.ensureModelReady(
+        onStatus: _updateStatus,
+        onProgress: (p) => _updateStatus('Preparing live captions — $p%...'),
+      );
+      // Permission on the record-backed platforms; if denied, the plain
+      // fallback path shows the same single message and stops cleanly.
+      if (!Platform.isLinux && !await _audioRecorder.hasPermission()) {
+        return false;
+      }
+      await _liveCaptions.start(
+        wavPath: filePath,
+        model: widget.intelligenceService.selectedWhisperModel,
+        initialPrompt: MeetingIntelligenceService.whisperContextPrompt(null),
+        deviceId: _selectedDeviceId,
+        inputDevice: _selectedInputDevice,
+        denoise: _enableNoiseSuppression,
+        onPartial: (text) {
+          if (mounted) setState(() => _livePartial = text);
+        },
+        onStatus: _updateStatus,
+      );
+      _liveModeActive = true;
+      _livePartial = '';
+      return true;
+    } catch (e) {
+      _liveModeActive = false;
+      // Drop any partial WAV the failed attempt may have created.
+      try {
+        final f = File(filePath);
+        if (await f.exists() && await f.length() < 65536) await f.delete();
+      } catch (_) {}
+      _showSnackBar('Live captions unavailable — recording without subtitles. ($e)');
+      return false;
+    }
+  }
+
+  void _updateStatus(String message) {
+    if (mounted) setState(() => _statusMessage = message);
+  }
+
+  /// Shown when Linux has neither the FFmpeg capture path nor the legacy
+  /// fmedia binary — a real fix instead of a ProcessException stack string.
+  Future<void> _showRecorderMissingDialog() async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('No recording backend found', style: TextStyle(fontSize: 17)),
+        content: const Text(
+          'LabScribe captures audio through FFmpeg on Linux, but neither '
+          'FFmpeg nor the legacy fmedia recorder is installed.\n\n'
+          'Install FFmpeg, then start recording again:\n\n'
+          '  sudo apt install ffmpeg      (Debian / Ubuntu)\n'
+          '  sudo dnf install ffmpeg      (Fedora)',
+          style: TextStyle(fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy_all, size: 15),
+            label: const Text('Copy command'),
+            onPressed: () {
+              Clipboard.setData(
+                  const ClipboardData(text: 'sudo apt install ffmpeg'));
+              _showSnackBar('Command copied to clipboard.');
+            },
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _pauseRecording() async {
     try {
-      await _audioRecorder.pause();
+      if (_liveModeActive) {
+        await _liveCaptions.pause();
+      } else if (_useDesktopRecorder) {
+        await _desktopRecorder.pause();
+      } else {
+        await _audioRecorder.pause();
+      }
       _timer?.cancel();
       setState(() {
         _recordingState = RecordingState.paused;
@@ -297,7 +475,13 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   Future<void> _resumeRecording() async {
     try {
-      await _audioRecorder.resume();
+      if (_liveModeActive) {
+        await _liveCaptions.resume();
+      } else if (_useDesktopRecorder) {
+        await _desktopRecorder.resume();
+      } else {
+        await _audioRecorder.resume();
+      }
       _startTimer();
       setState(() {
         _recordingState = RecordingState.recording;
@@ -311,23 +495,54 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   Future<void> _stopRecording() async {
     try {
       _timer?.cancel();
-      final path = await _audioRecorder.stop();
+      String? path;
+      var liveText = '';
+      if (_liveModeActive) {
+        // Finalizes inference and patches the WAV header in one step.
+        final result = await _liveCaptions.stop();
+        path = result.path;
+        liveText = result.text;
+        _liveModeActive = false;
+        _livePartial = '';
+      } else {
+        path = _useDesktopRecorder
+            ? await _desktopRecorder.stop()
+            : await _audioRecorder.stop();
+      }
 
       String? audioSha256;
+      var silentCapture = false;
       if (path != null) {
         audioSha256 = await CryptoUtils.sha256File(File(path));
+        // A file can look healthy by size while containing digital silence
+        // (wrong input device, muted mic) — check the actual waveform.
+        if (path.toLowerCase().endsWith('.wav')) {
+          // -80 dBFS: digital silence sits near -91 dB, live mic noise
+          // floors near -60 dB, so the boundary is unambiguous.
+          silentCapture =
+              await WavProbe.peakAmplitude(File(path)) < 0.0001;
+        }
       }
 
       setState(() {
         _recordingState = RecordingState.stopped;
         _recordedAudioPath = path ?? _recordedAudioPath;
-        _statusMessage = 'Recording saved on-device with a SHA-256 reference. Ready for analysis.';
-        
+        _statusMessage = silentCapture
+            ? 'Recording captured no microphone signal — pick another input device in Capture.'
+            : liveText.isNotEmpty
+                ? 'Live transcript ready — run Analysis for summary, tasks, and speakers.'
+                : 'Recording saved on-device with a SHA-256 reference. Ready for analysis.';
+
         if (_currentSession != null) {
           _currentSession!.audioPath = _recordedAudioPath;
           _currentSession!.durationSeconds = _recordDurationSeconds;
           _currentSession!.title = _titleController.text.trim().isEmpty ? 'Scientific Meeting' : _titleController.text.trim();
           _currentSession!.audioSha256 = audioSha256;
+          // Draft transcript available before any analysis runs.
+          if (liveText.isNotEmpty && _currentSession!.transcript.trim().isEmpty) {
+            _currentSession!.transcript = liveText;
+            _transcriptEditController.text = liveText;
+          }
         }
       });
 
@@ -335,13 +550,26 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         await SessionRepository().saveSession(_currentSession!);
       }
 
-      if ((_currentSession?.transcript.isEmpty ?? true) && _recordedAudioPath != null && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Recording saved. Next step: transcribe it.'),
-            action: SnackBarAction(label: 'Analyze', onPressed: () => _executeAiPipeline()),
-          ),
-        );
+      final session = _currentSession;
+      if (silentCapture && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          duration: Duration(seconds: 6),
+          content: Text(
+              '⚠️ The microphone captured silence. In Capture, choose a different input device '
+              '(try the ALSA entry) and record again.'),
+        ));
+      } else if (session != null && _recordedAudioPath != null && mounted) {
+        final fromLive = liveText.isNotEmpty;
+        if (fromLive || session.transcript.trim().isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(fromLive
+                  ? 'Live transcript ready. Run Analysis for summary, tasks, and speakers.'
+                  : 'Recording saved. Next step: transcribe it.'),
+              action: SnackBarAction(label: 'Analyze', onPressed: () => _executeAiPipeline()),
+            ),
+          );
+        }
       }
     } catch (e) {
       _showSnackBar('Error stopping recorder: $e');
@@ -501,21 +729,39 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   /// answers "is my microphone actually producing a usable file?" without
   /// running the speech engine at all.
   Future<void> _testMic() async {
-    if (_recordingState == RecordingState.recording) {
+    if (_recordingState == RecordingState.recording ||
+        _recordingState == RecordingState.paused ||
+        _desktopRecorder.isRunning) {
       _showSnackBar('Stop the current recording first.');
       return;
     }
+    if (_recorderUnavailable) {
+      await _showRecorderMissingDialog();
+      return;
+    }
     try {
-      if (!await _audioRecorder.hasPermission()) {
-        _showSnackBar('Microphone permission denied.');
-        return;
-      }
       final dir = await getTemporaryDirectory();
       final path = '${dir.path}/mic_test_${DateTime.now().millisecondsSinceEpoch}$_recordExtension';
-      await _audioRecorder.start(_recordConfig(), path: path);
+      if (_useDesktopRecorder) {
+        await _desktopRecorder.start(
+          path: path,
+          deviceId: _selectedDeviceId,
+          denoise: _enableNoiseSuppression,
+        );
+      } else {
+        if (!await _audioRecorder.hasPermission()) {
+          _showSnackBar('Microphone permission denied.');
+          return;
+        }
+        await _audioRecorder.start(_recordConfig(), path: path);
+      }
       _showSnackBar('Recording 5-second mic test — speak now.');
       await Future.delayed(const Duration(seconds: 5));
-      await _audioRecorder.stop();
+      if (_useDesktopRecorder) {
+        await _desktopRecorder.stop();
+      } else {
+        await _audioRecorder.stop();
+      }
       final file = File(path);
       if (!mounted) return;
       if (!await file.exists()) {
@@ -527,9 +773,15 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       String result;
       if (path.toLowerCase().endsWith('.wav')) {
         final info = await WavProbe.probe(file);
-        result = info == null
-            ? 'The test file ($sizeLabel) is not a readable WAV. Try again; if it repeats, your device recorder needs attention.'
-            : 'Format: ${info.formatLabel}\nLength: ~${info.durationSec.toStringAsFixed(0)}s ($sizeLabel)\n${info.isWhisperReady ? 'Ready for on-device transcription.' : 'Unexpected format — transcription may fail.'}';
+        if (info == null) {
+          result = 'The test file ($sizeLabel) is not a readable WAV. Try again; if it repeats, your device recorder needs attention.';
+        } else {
+          final peak = await WavProbe.peakAmplitude(file);
+          final level = peak < 0.0001
+              ? 'Signal: SILENT — this device produced no input. Pick another device in Capture and test again.'
+              : 'Signal: ${(20 * math.log(peak) / math.ln10).toStringAsFixed(0)} dBFS peak (speak to raise it).';
+          result = 'Format: ${info.formatLabel}\nLength: ~${info.durationSec.toStringAsFixed(0)}s ($sizeLabel)\n$level\n${info.isWhisperReady ? 'Ready for on-device transcription.' : 'Unexpected format — transcription may fail.'}';
+        }
       } else {
         result = 'Captured $sizeLabel of M4A audio. Tap Play to confirm it has sound — the engine converts this format automatically.';
       }
@@ -891,6 +1143,26 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
   }
 
   Future<void> _executeAiPipeline() async {
+    // Re-entrancy guard: the button lives on multiple screens and progress
+    // callbacks keep it pressable; running twice corrupts the session state.
+    if (_isPipelineRunning) {
+      _showSnackBar('Analysis is already running — watch the progress bar.');
+      return;
+    }
+    if (_recordingState == RecordingState.recording ||
+        _recordingState == RecordingState.paused) {
+      _showSnackBar('Stop the recording before analyzing it.');
+      return;
+    }
+    _isPipelineRunning = true;
+    try {
+      await _runPipeline();
+    } finally {
+      _isPipelineRunning = false;
+    }
+  }
+
+  Future<void> _runPipeline() async {
     final audioPath = (_currentSession?.audioPath?.isNotEmpty == true)
         ? _currentSession!.audioPath
         : _recordedAudioPath;
@@ -931,20 +1203,25 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       }
 
       // 1. On-device transcription in auto-detect mode (handles chunking
-      //    automatically for long recordings).
+      //    automatically for long recordings). Timed segments ground speaker
+      //    turns and playback seek in the real recording clock.
       const String? langHint = null;
 
       String transcript;
+      var segments = const <TranscriptSegment>[];
       if (audioPath != null && audioPath.isNotEmpty) {
-        transcript = await widget.intelligenceService.transcribeAudio(
+        final result = await widget.intelligenceService.transcribeAudioDetailed(
           audioFilePath: audioPath,
           languageHint: langHint,
           onProgress: (status) {
+            if (!mounted) return;
             setState(() {
               _statusMessage = status;
             });
           },
         );
+        transcript = result.text;
+        segments = result.segments;
       } else {
         // Pasted or imported text: analyze it directly.
         transcript = existingTranscript;
@@ -995,10 +1272,13 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         _statusMessage = 'Step 3: Synthesizing summary, tasks, and references...';
       });
 
-      // 3. Scientific intelligence synthesis (keyless hosted open model)
+      // 3. Scientific intelligence synthesis (keyless hosted open model),
+      //    focused by session type and grounded in real segment timestamps.
       final intelligence = await widget.intelligenceService.processSessionIntelligence(
         transcript: transcript,
         sessionTitle: _currentSession?.title ?? 'Scientific Session',
+        kind: _currentSession?.kind ?? SessionKind.meeting,
+        segments: segments,
       );
 
       // 4. Compute transcript SHA-256 reference
@@ -1022,6 +1302,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _showSnackBar('Transcription and analysis complete.');
       _goOverview();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _processingStage = ProcessingStage.error;
         _statusMessage = 'Error during AI pipeline: $e';
@@ -1066,7 +1347,19 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       _showSnackBar('Please enter or paste transcript text to analyze.');
       return;
     }
+    if (_isPipelineRunning) {
+      _showSnackBar('Analysis is already running — watch the progress bar.');
+      return;
+    }
+    _isPipelineRunning = true;
+    try {
+      await _analyzeTextBody(clean);
+    } finally {
+      _isPipelineRunning = false;
+    }
+  }
 
+  Future<void> _analyzeTextBody(String clean) async {
     try {
       setState(() {
         _processingStage = ProcessingStage.summarizing;
@@ -1089,6 +1382,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           audioPath: '',
           durationSeconds: (effectiveText.split(RegExp(r'\s+')).length / 2.5).round(),
           isDeIdentified: _enableClinicalDeIdentification,
+          kind: _pendingSessionKind,
         );
       }
 
@@ -1098,6 +1392,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       final intelligence = await widget.intelligenceService.processSessionIntelligence(
         transcript: effectiveText,
         sessionTitle: _currentSession!.title,
+        kind: _currentSession?.kind ?? SessionKind.meeting,
       );
 
       final transcriptHash = CryptoUtils.sha256String(effectiveText);
@@ -3044,8 +3339,131 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
 
   // --- Left Sidebar: Audio & Meeting Control Deck ---
 
+  static IconData _kindIcon(SessionKind kind) => switch (kind) {
+        SessionKind.meeting => Icons.groups_outlined,
+        SessionKind.journalClub => Icons.article_outlined,
+        SessionKind.seminar => Icons.record_voice_over_outlined,
+        SessionKind.lecture => Icons.menu_book_outlined,
+      };
+
+  void _selectSessionKind(SessionKind kind) {
+    final session = _currentSession;
+    setState(() {
+      _pendingSessionKind = kind;
+      session?.kind = kind;
+    });
+    // Persist immediately so the choice survives closing the app before
+    // the pipeline runs.
+    if (session != null) {
+      SessionRepository().saveSession(session);
+    }
+  }
+
+  /// Session-type chips: choosing one retargets the synthesis prompt
+  /// (Journal Club critiques a paper, Seminar distills takeaways, and so on).
+  Widget _buildSessionKindSelector(ThemeData theme) {
+    final current = _currentSession?.kind ?? _pendingSessionKind;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionLabel('Session type'),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final k in SessionKind.values)
+              ChoiceChip(
+                avatar: Icon(_kindIcon(k), size: 14),
+                label: Text(k.label, style: const TextStyle(fontSize: 12)),
+                selected: k == current,
+                visualDensity: VisualDensity.compact,
+                onSelected: (_) => _selectSessionKind(k),
+              ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          switch (current) {
+            SessionKind.journalClub =>
+              'Summaries emphasize paper critique, methods, and required revisions.',
+            SessionKind.seminar =>
+              'Summaries emphasize takeaways, open questions, and follow-up reading.',
+            SessionKind.lecture =>
+              'Summaries emphasize key concepts, definitions, and assigned work.',
+            SessionKind.meeting =>
+              'Summaries emphasize decisions, blockers, and task owners.',
+          },
+          style: TextStyle(
+            fontSize: 11,
+            height: 1.35,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Rolling subtitle strip — the on-screen AI subtitle while recording.
+  Widget _liveCaptionStrip(ThemeData theme) {
+    final text = _livePartial;
+    return LabCard(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.error,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'LIVE',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'AI subtitles',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            text.isEmpty ? 'Listening…' : text,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              fontStyle: text.isEmpty ? FontStyle.italic : FontStyle.normal,
+              color:
+                  text.isEmpty ? theme.colorScheme.outline : theme.colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRecordingControlPanel(ThemeData theme) {
     final canProcess = (_recordingState == RecordingState.stopped || _currentSession != null) &&
+        _recordingState != RecordingState.recording &&
+        _recordingState != RecordingState.paused &&
+        !_isPipelineRunning &&
         _processingStage != ProcessingStage.transcribing &&
         _processingStage != ProcessingStage.summarizing;
     return Column(
@@ -3070,6 +3488,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         ),
         const SizedBox(height: 10),
         LabCard(
+          child: _buildSessionKindSelector(theme),
+        ),
+        const SizedBox(height: 10),
+        LabCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -3091,6 +3513,10 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         ),
         const SizedBox(height: 10),
         _timerHero(theme),
+        if (_liveModeActive) ...[
+          const SizedBox(height: 10),
+          _liveCaptionStrip(theme),
+        ],
         const SizedBox(height: 12),
         _recordActions(theme),
         const SizedBox(height: 12),
@@ -3216,6 +3642,20 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
           child: Column(
             children: [
               const SectionLabel('Capture lab', icon: null),
+              SettingRow(
+                icon: Icons.subtitles_outlined,
+                iconColor: theme.colorScheme.secondary,
+                title: 'Live captions',
+                subtitle: 'AI subtitles stream while recording',
+                trailing: Switch(
+                  value: _liveCaptionsEnabled,
+                  onChanged: (_recordingState == RecordingState.recording ||
+                          _recordingState == RecordingState.paused)
+                      ? null
+                      : (v) => setState(() => _liveCaptionsEnabled = v),
+                ),
+              ),
+              const Divider(height: 8),
               SettingRow(
                 icon: Icons.graphic_eq,
                 iconColor: theme.colorScheme.primary,
@@ -3377,7 +3817,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                   if (_currentSession?.transcriptSha256 != null)
                     StatusPill(icon: Icons.verified_outlined, label: 'Ref ${_currentSession!.transcriptSha256!.substring(0, 8)}', color: theme.colorScheme.secondary),
                   if (_showTranslatedTranscript) StatusPill(icon: Icons.translate, label: 'Translated view', color: theme.colorScheme.tertiary),
-                  const Spacer(),
                   OutlinedButton.icon(
                     onPressed: _copyTranscriptToClipboard,
                     icon: const Icon(Icons.copy_outlined, size: 13),

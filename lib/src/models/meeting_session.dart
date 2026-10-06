@@ -8,6 +8,25 @@ enum RecordingState {
   stopped,
 }
 
+/// What kind of session this is. Drives the synthesis focus (a journal club
+/// critiques a paper, a seminar distills takeaways, a lecture drills key
+/// concepts) and the labels shown in the UI.
+enum SessionKind {
+  meeting('Lab Meeting'),
+  journalClub('Journal Club'),
+  seminar('Seminar'),
+  lecture('Lecture');
+
+  final String label;
+  const SessionKind(this.label);
+
+  /// Missing or unknown persisted values fall back to a plain meeting.
+  static SessionKind fromName(String? name) => SessionKind.values.firstWhere(
+        (k) => k.name == name,
+        orElse: () => SessionKind.meeting,
+      );
+}
+
 /// Pipeline progress states for AI post-processing
 enum ProcessingStage {
   idle,
@@ -318,6 +337,40 @@ class ChatMessage {
   }
 }
 
+/// One timed slice of a transcript, using real engine timestamps.
+///
+/// Produced by on-device Whisper when segment timing is requested, so
+/// speaker turns and playback seek can point at actual moments in the
+/// recording instead of estimating from word counts.
+class TranscriptSegment {
+  final int startMs;
+  final int endMs;
+  final String text;
+
+  const TranscriptSegment({
+    required this.startMs,
+    required this.endMs,
+    required this.text,
+  });
+
+  int get startSeconds => (startMs / 1000).round();
+  int get endSeconds => (endMs / 1000).round();
+
+  factory TranscriptSegment.fromJson(Map<String, dynamic> json) {
+    return TranscriptSegment(
+      startMs: (json['startMs'] as num?)?.toInt() ?? 0,
+      endMs: (json['endMs'] as num?)?.toInt() ?? 0,
+      text: json['text'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'startMs': startMs,
+        'endMs': endMs,
+        'text': text,
+      };
+}
+
 /// Structured multi-speaker conversational turn (Speaker Diarization)
 class SpeakerTurn {
   final String id;
@@ -337,14 +390,16 @@ class SpeakerTurn {
   }) : speakerName = speakerName ?? speakerId;
 
   factory SpeakerTurn.fromJson(Map<String, dynamic> json) {
-    final speakerId = json['speakerId'] ?? 'Speaker 1';
+    final speakerId = (json['speakerId'] as String?) ?? 'Speaker 1';
     return SpeakerTurn(
-      id: json['id'] ?? const Uuid().v4(),
+      id: (json['id'] as String?) ?? const Uuid().v4(),
       speakerId: speakerId,
-      speakerName: json['speakerName'] ?? speakerId,
-      startSeconds: json['startSeconds'] ?? 0,
-      endSeconds: json['endSeconds'] ?? 0,
-      text: json['text'] ?? '',
+      speakerName: (json['speakerName'] as String?) ?? speakerId,
+      // Models occasionally emit "12.5" instead of 12 — coerce rather than
+      // crash on a typed int field.
+      startSeconds: ((json['startSeconds'] as num?) ?? 0).toInt(),
+      endSeconds: ((json['endSeconds'] as num?) ?? 0).toInt(),
+      text: (json['text'] as String?) ?? '',
     );
   }
 
@@ -378,6 +433,7 @@ class MeetingSession {
   bool isVirtualCall;
   String? audioSha256;
   String? transcriptSha256;
+  SessionKind kind;
 
   MeetingSession({
     String? id,
@@ -396,6 +452,7 @@ class MeetingSession {
     List<SpeakerTurn>? speakerTurns,
     this.isDeIdentified = false,
     this.isVirtualCall = false,
+    this.kind = SessionKind.meeting,
     this.audioSha256,
     this.transcriptSha256,
   })  : id = id ?? DateTime.now().millisecondsSinceEpoch.toString(),
