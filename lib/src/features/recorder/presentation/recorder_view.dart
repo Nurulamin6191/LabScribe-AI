@@ -1825,6 +1825,9 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
       ));
       _isWaitingForAiChatResponse = true;
     });
+    // Persist immediately: without this the history only reached disk if
+    // some later action happened to save the session.
+    SessionRepository().saveSession(_currentSession!);
 
     try {
       final reply = await widget.intelligenceService.askSessionBot(
@@ -1833,6 +1836,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         question: text,
       );
 
+      if (!mounted) return;
       setState(() {
         _currentSession!.chatHistory.add(ChatMessage(
           sender: 'ai',
@@ -1841,6 +1845,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         ));
         _isWaitingForAiChatResponse = false;
       });
+      SessionRepository().saveSession(_currentSession!);
 
       Future.delayed(const Duration(milliseconds: 100), () {
         if (_chatScrollController.hasClients) {
