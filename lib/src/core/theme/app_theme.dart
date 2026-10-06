@@ -13,7 +13,6 @@ class LabScribeTheme {
   // Signature reds (primary actions, record, highlights).
   static const _red = Color(0xFFE53935);
   static const _redBright = Color(0xFFFF5252);
-  static const _redDeep = Color(0xFFB71C1C);
   static const _redInk = Color(0xFF7F0000);
   static const _amber = Color(0xFFB77900);
   static const _signalRed = Color(0xFFD92D20);

@@ -276,8 +276,7 @@ class _SettingsViewState extends State<SettingsView> {
             ),
           ),
         ],
-      ),
-    );
+      );
     if (widget.embedded) return body;
     return Scaffold(
       appBar: AppBar(

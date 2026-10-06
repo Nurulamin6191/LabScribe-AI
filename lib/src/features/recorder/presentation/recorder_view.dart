@@ -2697,7 +2697,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  Widget _recordActions(ThemeData theme, {bool compact = false}) {
+  Widget _recordActions(ThemeData theme) {
     final idle = _recordingState == RecordingState.idle || _recordingState == RecordingState.stopped;
     if (idle) {
       const fabColor = Color(0xFFD92D20);
@@ -3506,7 +3506,23 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Text(turn.speakerName, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: color)),
+                                          InkWell(
+                                            onTap: () => _showRenameSpeakerDialog(turn.speakerId, turn.speakerName),
+                                            borderRadius: BorderRadius.circular(6),
+                                            child: Padding(
+                                              padding: const EdgeInsets.symmetric(vertical: 1),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(turn.speakerName, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: color), overflow: TextOverflow.ellipsis),
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Icon(Icons.edit_outlined, size: 11, color: color.withValues(alpha: 0.7)),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
                                           const SizedBox(height: 3),
                                           RichText(text: TextSpan(children: _highlightSpans(turn.text, q, hlBase, hlStyle))),
                                         ],
@@ -3837,6 +3853,7 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
                         ),
                       ),
                     )),
+              ],
               ],
             ],
           ),
@@ -4178,185 +4195,6 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildSpeakersTab(ThemeData theme) {
-    final turns = _currentSession?.speakerTurns ?? [];
-    if (turns.isEmpty) {
-      return EmptyState(
-        icon: Icons.record_voice_over_outlined,
-        title: 'No diarization yet',
-        body: 'Run AI synthesis to segment who said what, rename speakers once, and tap any turn to seek audio.',
-        primaryLabel: 'Generate speaker turns',
-        onPrimary: (_recordedAudioPath != null || (_currentSession?.transcript.isNotEmpty == true)) ? _executeAiPipeline : null,
-      );
-    }
-
-    return Column(
-      children: [
-        Builder(
-          builder: (context) {
-            final talk = _talkSeconds();
-            final colors = _speakerColorMap();
-            final total = talk.values.fold<int>(0, (a, b) => a + b);
-            final names = talk.keys.toList()..sort((a, b) => talk[b]!.compareTo(talk[a]!));
-            int wordsOf(String name) => turns.where((e) => e.speakerName == name).fold(0, (a, e) => a + _wordCount(e.text));
-            int turnsOf(String name) => turns.where((e) => e.speakerName == name).length;
-            return Container(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                border: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.6))),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.people_alt_outlined, size: 18),
-                      const SizedBox(width: 8),
-                      Text('${names.length} speakers', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                      Text(' · ${turns.length} turns', style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline)),
-                      if (_currentSession?.isVirtualCall == true) ...[
-                        const SizedBox(width: 10),
-                        StatusPill(icon: Icons.video_call_outlined, label: 'Call import', color: Theme.of(context).colorScheme.secondary),
-                      ],
-                      const Spacer(),
-                      Text('Tap name to rename', style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Theme.of(context).colorScheme.outline)),
-                    ],
-                  ),
-                  if (total > 0) ...[
-                    const SizedBox(height: 10),
-                    TalkTimeBar(secondsBySpeaker: talk, colorBySpeaker: colors),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: names.map((name) {
-                        final color = colors[name] ?? Theme.of(context).colorScheme.primary;
-                        final pct = total == 0 ? 0 : (talk[name]! / total * 100).round();
-                        final first = turns.firstWhere((e) => e.speakerName == name);
-                        return InkWell(
-                          onTap: () => _showRenameSpeakerDialog(first.speakerId, name),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surfaceContainerLow,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.6)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                CircleAvatar(
-                                  radius: 11,
-                                  backgroundColor: color.withValues(alpha: 0.15),
-                                  child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'S', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color)),
-                                ),
-                                const SizedBox(width: 7),
-                                Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                                const SizedBox(width: 7),
-                                Text('${turnsOf(name)} turns · ${wordsOf(name)}w · $pct%', style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline)),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ],
-              ),
-            );
-          },
-        ),
-
-        Expanded(
-          child: ListView.separated(
-            padding: const EdgeInsets.all(20),
-            itemCount: turns.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (context, index) {
-              final turn = turns[index];
-              final speakerColor = _getSpeakerColor(turn.speakerId);
-              return LabCard(
-                padding: const EdgeInsets.all(14),
-                color: index.isOdd ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35) : null,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 14,
-                          backgroundColor: speakerColor.withValues(alpha: 0.15),
-                          child: Text(
-                            turn.speakerName.isNotEmpty ? turn.speakerName[0].toUpperCase() : 'S',
-                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: speakerColor),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: InkWell(
-                            onTap: () => _showRenameSpeakerDialog(turn.speakerId, turn.speakerName),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-                              child: Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      turn.speakerName,
-                                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: speakerColor),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Icon(Icons.edit_outlined, size: 13, color: speakerColor.withValues(alpha: 0.7)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        InkWell(
-                          onTap: () => _seekAudio(turn.startSeconds),
-                          borderRadius: BorderRadius.circular(99),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                              borderRadius: BorderRadius.circular(99),
-                              border: Border.all(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.play_circle_outline, size: 13, color: Color(0xFF3B5BFF)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '${formatMS(turn.startSeconds)}–${formatMS(turn.endSeconds)}',
-                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()]),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Container(width: 28, height: 3, decoration: BoxDecoration(borderRadius: BorderRadius.circular(3), color: speakerColor.withValues(alpha: 0.5))),
-                    const SizedBox(height: 8),
-                    Text(turn.text, style: const TextStyle(fontSize: 13.2, height: 1.55)),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  // --- Glossary tab ---
-
   Widget _buildChatTab(ThemeData theme) {
     final history = _currentSession?.chatHistory ?? [];
     final hasTranscript = _currentSession?.transcript.isNotEmpty == true;
@@ -4503,12 +4341,5 @@ class _RecorderViewState extends State<RecorderView> with SingleTickerProviderSt
         ),
       ],
     );
-  }
-
-  Widget _buildEmptyState(String message) {
-    final parts = message.split('\n');
-    final title = parts.first;
-    final body = parts.length > 1 ? parts.sublist(1).join('\n') : '';
-    return EmptyState(icon: Icons.science_outlined, title: title, body: body.isEmpty ? 'Run AI synthesis to populate this dashboard.' : body);
   }
 }

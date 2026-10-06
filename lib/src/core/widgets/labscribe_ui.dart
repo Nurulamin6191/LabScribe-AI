@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import '../workflow/session_workflow.dart';
 
 /// Reusable premium UI primitives for LabScribe AI.
 /// Keeps every dashboard visually coherent without duplicating styles.
